@@ -1,0 +1,6 @@
+add_subdirectory(arm_timer)
+add_subdirectory(dma)
+add_subdirectory(gpio)
+add_subdirectory(mailbox)
+add_subdirectory(pwm)
+add_subdirectory(spi)

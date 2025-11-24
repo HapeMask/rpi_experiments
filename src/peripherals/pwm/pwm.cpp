@@ -1,0 +1,140 @@
+#include <chrono>
+#include <sstream>
+#include <thread>
+#include <unistd.h>
+
+#include "peripherals/pwm/pwm.hpp"
+#include "peripherals/pwm/pwm_defs.hpp"
+#include "peripherals/clock/clk_defs.hpp"
+
+// Helpers to write to a register and wait to avoid overwhelming the bus.
+void write_reg_with_sleep(volatile void* reg, uint32_t val, int sleep_ms=10) {
+    *(volatile uint32_t*)reg = val;
+    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+}
+
+PWM::PWM(float duty_cycle, float freq, bool use_fifo) : _use_fifo(use_fifo) {
+    _virt_pwm_regs = map_phys_block((void*)(_asi.phys_mmio_base + PWM_BASE_OFS), PWM_LEN, _asi.page_size);
+    _virt_clk_regs = map_phys_block((void*)(_asi.phys_mmio_base + CLK_BASE_OFS), CLK_LEN, _asi.page_size);
+
+    _ctl_reg = (volatile PWMControl*) reg_addr(_virt_pwm_regs, PWM_CTL_OFS);
+    _sta_reg = (volatile PWMStatus*) reg_addr(_virt_pwm_regs, PWM_STA_OFS);
+    _dmac_reg = (volatile PWMDMAControl*) reg_addr(_virt_pwm_regs, PWM_DMAC_OFS);
+    _dat_reg = reg_addr(_virt_pwm_regs, PWM0_DAT_OFS);
+    _rng_reg = reg_addr(_virt_pwm_regs, PWM0_RNG_OFS);
+    _fif_reg = reg_addr(_virt_pwm_regs, PWM0_FIF_OFS);
+    _clk_pwm_ctl_reg = (volatile ClockControl*)reg_addr(_virt_clk_regs, CLK_PWM_CTL_OFS);
+    _clk_pwm_div_reg = (volatile ClockDivider*)reg_addr(_virt_clk_regs, CLK_PWM_DIV_OFS);
+
+    setup_clock(duty_cycle, freq);
+}
+
+PWM::~PWM() {
+    if (_virt_clk_regs) {
+        write_reg_with_sleep(_clk_pwm_ctl_reg, ClockControl{{.kill=1}}.bits);
+        unmap_phys_block((void*)(_asi.phys_mmio_base + CLK_BASE_OFS), CLK_LEN, _asi.page_size);
+    }
+
+    if (_virt_pwm_regs) {
+        write_reg_with_sleep(_ctl_reg, PWMControl{{.enable_1=0}}.bits);
+        unmap_phys_block((void*)(_asi.phys_mmio_base + PWM_BASE_OFS), PWM_LEN, _asi.page_size);
+    }
+}
+
+void PWM::setup_clock(float duty_cycle, float freq) {
+    _duty_cycle = duty_cycle;
+    _freq = freq;
+
+    stop();
+
+    // Kill the clock generator and wait for it to stop.
+    write_reg_with_sleep(_clk_pwm_ctl_reg, ClockControl{{.kill=1}}.bits);
+    while (_clk_pwm_ctl_reg->flags.busy) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (!_use_m_s) {
+        // In non-M/S mode, the on and off pulses are multiples of a clock
+        // cycle, TODO FIX THIS
+        throw std::runtime_error("Not implemented.");
+    }
+
+    // Set up the clock.
+
+    // Use the smallest divider (can't use 1) for the best precision when using
+    // M/S mode. Otherwise, try to get the PWM range to be as close as
+    // possible to the requested frequency.
+    const uint32_t clk_div_i = _use_m_s ? 2 : (PWM_CLK_HZ / freq);
+    if (clk_div_i < 2 || clk_div_i > 4095) {
+        std::ostringstream ss;
+        ss << "Bad clock divider: " << clk_div_i << ". Must be in [2, 4095].";
+        throw std::runtime_error(ss.str());
+    }
+    const uint32_t real_clk_freq = (PWM_CLK_HZ / clk_div_i);
+
+    write_reg_with_sleep(_clk_pwm_div_reg, ClockDivider{{.integer=clk_div_i}}.bits);
+
+    // Start the clock.
+    write_reg_with_sleep(
+        _clk_pwm_ctl_reg,
+        ClockControl{{
+#ifdef USE_PLLD_FOR_PWM_CLK
+            .src=CLK_SRC_PLLD,
+#else
+            .src=CLK_SRC_OSC,
+#endif
+            .enable=1
+        }}.bits
+    );
+
+    // Wait for the clock to start up (become busy).
+    while (!_clk_pwm_ctl_reg->flags.busy) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    write_reg_with_sleep(_sta_reg, ~0);
+
+    if (_use_m_s) {
+        write_reg_with_sleep(_dat_reg, (uint32_t)(duty_cycle * real_clk_freq / freq));
+        write_reg_with_sleep(_rng_reg, (uint32_t)(real_clk_freq / freq));
+    } else {
+        // TODO
+        write_reg_with_sleep(_dat_reg, 1);
+        write_reg_with_sleep(_rng_reg, 2);
+    }
+}
+
+void PWM::start() {
+    // Reset PWM
+    write_reg_with_sleep(_ctl_reg, 0);
+    write_reg_with_sleep(_sta_reg, ~0);
+
+    // Start PWM
+    write_reg_with_sleep(
+        _ctl_reg,
+        PWMControl{{.enable_1=1, .use_fifo_1=_use_fifo, .use_m_s_1=_use_m_s}}.bits
+    );
+}
+
+void PWM::stop() {
+    write_reg_with_sleep(_ctl_reg, PWMControl{{.enable_1=0, .enable_2=0}}.bits);
+}
+
+void PWM::enable_dma(uint32_t dreq_thresh, uint32_t panic_thresh) {
+    write_reg_with_sleep(
+        _dmac_reg,
+        PWMDMAControl{{
+            .dma_req_thresh=dreq_thresh,
+            .dma_panic_thresh=panic_thresh,
+            .enable=1
+        }}.bits
+    );
+}
+
+void PWM::disable_dma() {
+    write_reg_with_sleep(_dmac_reg, PWMDMAControl{{.enable=0}}.bits);
+}
+
+void* PWM::reg_to_bus(uint32_t reg_ofs_bytes) const {
+    return (void*)(_asi.bus_mmio_base + PWM_BASE_OFS + reg_ofs_bytes);
+}
