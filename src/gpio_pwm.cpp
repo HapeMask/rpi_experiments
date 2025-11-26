@@ -31,11 +31,11 @@ void validate_inputs(int pin, float duty_cycle, float freq, bool use_m_s) {
     float min_freq, max_freq;
     if (use_m_s) {
         min_freq = 0.f;
-        max_freq = PWM_CLK_HZ;
+        max_freq = CLOCK_HZ[ClockSource::PLLD];
     } else {
         // TODO;
-        min_freq = MIN_CLK_HZ;
-        max_freq = MAX_CLK_HZ;
+        min_freq = 0;
+        max_freq = 0;
     }
 
     if (freq < min_freq or freq > max_freq) {

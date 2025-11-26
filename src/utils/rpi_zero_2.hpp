@@ -1,8 +1,15 @@
 #pragma once
 
-static constexpr uint32_t OSC_CLK_HZ   = 19200000;
-static constexpr uint32_t ARM_TIMER_HZ = 250000000;
-static constexpr uint32_t PLLD_CLK_HZ  = 500000000;
+#include <unordered_map>
+
+#include "peripherals/clock/clock_defs.hpp"
+
+static std::unordered_map<ClockSource, uint32_t> CLOCK_HZ = {
+    {ClockSource::OSC,   19200000},
+    {ClockSource::PLLD,  500000000}
+};
+
+static constexpr uint32_t ARM_TIMER_HZ = 250000000; // But not really...
 static constexpr uint32_t SPI_CLOCK_HZ = 250000000;
 
 /*

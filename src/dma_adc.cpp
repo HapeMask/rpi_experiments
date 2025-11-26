@@ -23,7 +23,7 @@ DMAADC::DMAADC(int spi_speed, uint32_t spi_flag_bits, float vdd, int n_samples, 
     _VDD(vdd)
 {
     resize(n_samples);
-    _timescale = 1.f / (float)OSC_CLK_HZ;
+    _timescale = 1.f / (float)CLOCK_HZ[ClockSource::OSC];
 
     _gpio.set_mode(SPI0_GPIO_CE0, GPIOMode::ALT_0);
     _gpio.set_mode(SPI0_GPIO_CE1, GPIOMode::ALT_0);

@@ -3,30 +3,52 @@
 #include <cstdint>
 #include <thread>
 
+enum class ClockID : uint32_t;
+
 static constexpr uint32_t CLK_BASE_OFS   = 0x00101000;
 
 // Not really, but long enough to get the registers we care about.
+// See: https://elinux.org/BCM2835_registers#CM
+// for more clocks / registers.
 static constexpr uint32_t CLK_LEN        = 0xB8;
-                       
-static constexpr uint32_t CLK_PWM_CTL_OFS  = 0xa0;
-static constexpr uint32_t CLK_PWM_DIV_OFS  = 0xa4;
-static constexpr uint32_t CLK_SMI_CTL_OFS  = 0xb0;
-static constexpr uint32_t CLK_SMI_DIV_OFS  = 0xb4;
-                       
-static constexpr uint32_t CLK_SRC_GND    = 0;
-static constexpr uint32_t CLK_SRC_OSC    = 1;
-static constexpr uint32_t CLK_SRC_TDBG0  = 2;
-static constexpr uint32_t CLK_SRC_TDBG1  = 3;
-static constexpr uint32_t CLK_SRC_PLLA   = 4;
-static constexpr uint32_t CLK_SRC_PLLC   = 5;
-static constexpr uint32_t CLK_SRC_PLLD   = 6;
-static constexpr uint32_t CLK_SRC_HDMI   = 7;
-                       
+
+inline constexpr uint32_t CLK_CTL_OFS(ClockID id) { return (uint32_t)id * 8 + 0; }
+inline constexpr uint32_t CLK_DIV_OFS(ClockID id) { return (uint32_t)id * 8 + 4; }
+
+enum class ClockID : uint32_t {
+    // Values derived from the offsets in https://elinux.org/BCM2835_registers#CM
+    GP0 = 14,
+    GP1 = 15,
+    GP2 = 16,
+    PWM = 20,
+    SMI = 22
+};
+// TODO: Is there a better way to iterate over the enum values? Seems sad...
+static constexpr ClockID ALL_CLOCKS[] = {
+    ClockID::GP0,
+    ClockID::GP1,
+    ClockID::GP2,
+    ClockID::PWM,
+    ClockID::SMI
+};
+static constexpr int N_CLOCKS = sizeof(ALL_CLOCKS) / sizeof(ClockID);
+
+enum class ClockSource : uint32_t {
+    GND    = 0,
+    OSC    = 1,
+    TDBG0  = 2,
+    TDBG1  = 3,
+    PLLA   = 4,
+    PLLC   = 5,
+    PLLD   = 6,
+    HDMI   = 7
+};
+
 static constexpr uint32_t BCM_PASSWD     = 0x5A;
 
 union ClockControl {
     struct {
-        uint32_t src            : 4 = 0;
+        ClockSource src         : 4 = ClockSource::GND;
         uint32_t enable         : 1 = 0;
         uint32_t kill           : 1 = 0;
         uint32_t unused_0       : 1 = 0;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include "peripherals/peripheral.hpp"
 #include "peripherals/clock/clock_defs.hpp"
 
@@ -8,13 +10,12 @@ class Clock : public Peripheral {
         Clock();
         virtual ~Clock();
 
-    //TODO: Make an interface for this? Or public is fine...
-    //protected:
-        volatile ClockControl* _clk_pwm_ctl_reg = nullptr;
-        volatile ClockDivider* _clk_pwm_div_reg = nullptr;
+        uint32_t start_clock(ClockID id, ClockSource src, float freq);
 
-        volatile ClockControl* _clk_smi_ctl_reg = nullptr;
-        volatile ClockDivider* _clk_smi_div_reg = nullptr;
+        volatile ClockControl* get_ctl_reg(ClockID id);
+        volatile ClockDivider* get_div_reg(ClockID id);
 
-        // TODO: Add the rest of the clocks here.
+    protected:
+        std::unordered_map<ClockID, volatile ClockControl*> _clk_ctl_regs;
+        std::unordered_map<ClockID, volatile ClockDivider*> _clk_div_regs;
 };

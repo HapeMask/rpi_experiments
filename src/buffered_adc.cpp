@@ -138,6 +138,6 @@ void BufferedADC::set_use_arm_timer(bool use_arm_timer) {
         _timescale = 1.f / (float)ARM_TIMER_HZ;
     } else {
         _arm_timer.stop();
-        _timescale = 1.f / (float)OSC_CLK_HZ;
+        _timescale = 1.f / (float)CLOCK_HZ[ClockSource::OSC];
     }
 }

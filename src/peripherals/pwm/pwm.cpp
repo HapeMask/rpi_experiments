@@ -34,50 +34,18 @@ void PWM::setup_clock(float duty_cycle, float freq) {
 
     stop();
 
-    // Kill the clock generator and wait for it to stop.
-    write_reg_with_sleep(_clock._clk_pwm_ctl_reg, ClockControl{{.kill=1}}.bits);
-    while (_clock._clk_pwm_ctl_reg->flags.busy) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
     if (!_use_m_s) {
         // In non-M/S mode, the on and off pulses are multiples of a clock
         // cycle, TODO FIX THIS
         throw std::runtime_error("Not implemented.");
     }
 
-    // Set up the clock.
-
-    // Use the smallest divider (can't use 1) for the best precision when using
-    // M/S mode. Otherwise, try to get the PWM range to be as close as
-    // possible to the requested frequency.
-    const uint32_t clk_div_i = _use_m_s ? 2 : (PWM_CLK_HZ / freq);
-    if (clk_div_i < 2 || clk_div_i > 4095) {
-        std::ostringstream ss;
-        ss << "Bad clock divider: " << clk_div_i << ". Must be in [2, 4095].";
-        throw std::runtime_error(ss.str());
-    }
-    const uint32_t real_clk_freq = (PWM_CLK_HZ / clk_div_i);
-
-    write_reg_with_sleep(_clock._clk_pwm_div_reg, ClockDivider{{.integer=clk_div_i}}.bits);
-
-    // Start the clock.
-    write_reg_with_sleep(
-        _clock._clk_pwm_ctl_reg,
-        ClockControl{{
-#ifdef USE_PLLD_FOR_PWM_CLK
-            .src=CLK_SRC_PLLD,
-#else
-            .src=CLK_SRC_OSC,
-#endif
-            .enable=1
-        }}.bits
-    );
-
-    // Wait for the clock to start up (become busy).
-    while (!_clock._clk_pwm_ctl_reg->flags.busy) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    // Use the highest frequency (can't use full freq. since that results in a
+    // divider of 1) for the best precision when using M/S mode. Otherwise, try
+    // to get the PWM range to be as close as possible to the requested
+    // frequency.
+    const float tgt_freq = _use_m_s ? (CLOCK_HZ[ClockSource::PLLD] / 2) : freq;
+    const float real_clk_freq = _clock.start_clock(ClockID::PWM, ClockSource::PLLD, tgt_freq);
 
     write_reg_with_sleep(_sta_reg, ~0);
 
