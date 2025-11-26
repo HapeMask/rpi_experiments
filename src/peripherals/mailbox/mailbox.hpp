@@ -7,16 +7,16 @@
 
 #include "utils/reg_mem_utils.hpp"
 
-#define MBOX_BASE_OFS 0x0000B880
-#define MBOX_LEN 0x20
+static constexpr int MBOX_BASE_OFS  = 0x0000B880;
+static constexpr int MBOX_LEN       = 0x20;
 
-#define MBOX0_FIFO_OFS 0x00
-#define MBOX0_STATUS_OFS 0x18
-#define MBOX1_FIFO_OFS 0x20
-#define MBOX1_STATUS_OFS 0x38
+static constexpr int MBOX0_FIFO_OFS     = 0x00;
+static constexpr int MBOX0_STATUS_OFS   = 0x18;
+static constexpr int MBOX1_FIFO_OFS     = 0x20;
+static constexpr int MBOX1_STATUS_OFS   = 0x38;
 
-#define MBOX_STATUS_SUCCESS 0x80000000
-#define MBOX_STATUS_FAILURE 0x80000001
+static constexpr int MBOX_STATUS_SUCCESS = 0x80000000;
+static constexpr int MBOX_STATUS_FAILURE = 0x80000001;
 
 union MboxMessageRef {
     struct {

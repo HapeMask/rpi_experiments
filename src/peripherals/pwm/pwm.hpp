@@ -12,13 +12,13 @@
 #define USE_PLLD_FOR_PWM_CLK
 
 #ifdef USE_PLLD_FOR_PWM_CLK
-#define PWM_CLK_HZ PLLD_CLK_HZ
+static constexpr int PWM_CLK_HZ = PLLD_CLK_HZ;
 #else
-#define PWM_CLK_HZ OSC_CLK_HZ
+static constexpr int PWM_CLK_HZ = OSC_CLK_HZ;
 #endif
 
-#define MIN_CLK_HZ PWM_CLK_HZ / 4095
-#define MAX_CLK_HZ PWM_CLK_HZ / 2
+static constexpr int MIN_CLK_HZ  = PWM_CLK_HZ / 4095;
+static constexpr int MAX_CLK_HZ  = PWM_CLK_HZ / 2;
 
 class PWM : public Peripheral {
     public:

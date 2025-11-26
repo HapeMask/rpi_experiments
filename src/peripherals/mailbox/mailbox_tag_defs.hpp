@@ -2,10 +2,10 @@
 
 #include "peripherals/mailbox/mailbox.hpp"
 
-#define MEM_ALIAS_NORMAL            0 // normal allocating alias. Don't use from ARM
-#define MEM_ALIAS_DIRECT            1 // 0xC alias uncached
-#define MEM_ALIAS_COHERENT          2 // 0x8 alias. Non-allocating in L2 but coherent
-#define MEM_ALIAS_L1_NONALLOCATING  3 // Allocating in L2
+static constexpr int MEM_ALIAS_NORMAL           = 0; // normal allocating alias. Don't use from ARM
+static constexpr int MEM_ALIAS_DIRECT           = 1; // 0xC alias uncached
+static constexpr int MEM_ALIAS_COHERENT         = 2; // 0x8 alias. Non-allocating in L2 but coherent
+static constexpr int MEM_ALIAS_L1_NONALLOCATING = 3; // Allocating in L2
 union MboxAllocFlags {
     struct {
         uint32_t discardable    : 1 = 0; // Can be resized to 0 at any time. Use for cached data.

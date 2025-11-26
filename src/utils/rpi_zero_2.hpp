@@ -1,9 +1,9 @@
 #pragma once
 
-#define OSC_CLK_HZ      19200000
-#define ARM_TIMER_HZ    250000000
-#define PLLD_CLK_HZ     500000000
-#define SPI_CLOCK_HZ    250000000
+static constexpr int OSC_CLK_HZ   = 19200000;
+static constexpr int ARM_TIMER_HZ = 250000000;
+static constexpr int PLLD_CLK_HZ  = 500000000;
+static constexpr int SPI_CLOCK_HZ = 250000000;
 
 /*
  * Initializes the performance counters to enable the cycle counter. Requires
