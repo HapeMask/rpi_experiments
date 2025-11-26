@@ -51,3 +51,11 @@ add_custom_target(copy_bash
             ${CMAKE_BINARY_DIR}/osc.bash
     COMMENT "Copying Bash script to build directory"
 )
+
+add_custom_target(copy_resources
+    ALL # This ensures the target is built as part of the default build process
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/resources
+            ${CMAKE_BINARY_DIR}/resources
+    COMMENT "Copying icon resources to build directory"
+)
