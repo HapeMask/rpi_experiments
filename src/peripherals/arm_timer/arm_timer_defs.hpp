@@ -1,16 +1,16 @@
 #pragma once
 
-static constexpr int ARM_TIMER_BASE_OFS  = 0x0000B000;
-static constexpr int ARM_TIMER_LEN  = 0x428;
+static constexpr uint32_t ARM_TIMER_BASE_OFS  = 0x0000B000;
+static constexpr uint32_t ARM_TIMER_LEN  = 0x428;
 
-static constexpr int ARM_TIMER_LOAD_OFS       = 0x400;
-static constexpr int ARM_TIMER_VAL_OFS        = 0x404;
-static constexpr int ARM_TIMER_CTL_OFS        = 0x408;
-static constexpr int ARM_TIMER_RELOAD_OFS     = 0x418;
-static constexpr int ARM_TIMER_PRE_DIV_OFS    = 0x41C;
-static constexpr int ARM_TIMER_FREE_CTR_OFS   = 0x420;
+static constexpr uint32_t ARM_TIMER_LOAD_OFS       = 0x400;
+static constexpr uint32_t ARM_TIMER_VAL_OFS        = 0x404;
+static constexpr uint32_t ARM_TIMER_CTL_OFS        = 0x408;
+static constexpr uint32_t ARM_TIMER_RELOAD_OFS     = 0x418;
+static constexpr uint32_t ARM_TIMER_PRE_DIV_OFS    = 0x41C;
+static constexpr uint32_t ARM_TIMER_FREE_CTR_OFS   = 0x420;
 
-static constexpr int ARM_TIMER_RESET_BITS  = 0x3E0020;
+static constexpr uint32_t ARM_TIMER_RESET_BITS  = 0x3E0020;
 
 union TimerControl {
     struct {

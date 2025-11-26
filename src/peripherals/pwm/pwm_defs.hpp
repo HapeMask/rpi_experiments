@@ -1,14 +1,14 @@
 #pragma once
 
-static constexpr int PWM_BASE_OFS   = 0x0020C000;
-static constexpr int PWM_LEN        = 0x28;
-
-static constexpr int PWM_CTL_OFS      = 0x00;
-static constexpr int PWM_STA_OFS      = 0x04;
-static constexpr int PWM_DMAC_OFS     = 0x08;
-static constexpr int PWM0_RNG_OFS     = 0x10;
-static constexpr int PWM0_DAT_OFS     = 0x14;
-static constexpr int PWM0_FIF_OFS     = 0x18;
+static constexpr uint32_t PWM_BASE_OFS  = 0x0020C000;
+static constexpr uint32_t PWM_LEN       = 0x28;
+                       
+static constexpr uint32_t PWM_CTL_OFS   = 0x00;
+static constexpr uint32_t PWM_STA_OFS   = 0x04;
+static constexpr uint32_t PWM_DMAC_OFS  = 0x08;
+static constexpr uint32_t PWM0_RNG_OFS  = 0x10;
+static constexpr uint32_t PWM0_DAT_OFS  = 0x14;
+static constexpr uint32_t PWM0_FIF_OFS  = 0x18;
 
 union PWMControl {
     struct {

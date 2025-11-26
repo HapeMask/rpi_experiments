@@ -3,26 +3,26 @@
 #include <cstdint>
 #include <thread>
 
-static constexpr int CLK_BASE_OFS   = 0x00101000;
+static constexpr uint32_t CLK_BASE_OFS   = 0x00101000;
 
 // Not really, but long enough to get the registers we care about.
-static constexpr int CLK_LEN        = 0xB8;
-
-static constexpr int CLK_PWM_CTL_OFS  = 0xa0;
-static constexpr int CLK_PWM_DIV_OFS  = 0xa4;
-static constexpr int CLK_SMI_CTL_OFS  = 0xb0;
-static constexpr int CLK_SMI_DIV_OFS  = 0xb4;
-
-static constexpr int CLK_SRC_GND    = 0;
-static constexpr int CLK_SRC_OSC    = 1;
-static constexpr int CLK_SRC_TDBG0  = 2;
-static constexpr int CLK_SRC_TDBG1  = 3;
-static constexpr int CLK_SRC_PLLA   = 4;
-static constexpr int CLK_SRC_PLLC   = 5;
-static constexpr int CLK_SRC_PLLD   = 6;
-static constexpr int CLK_SRC_HDMI   = 7;
-
-static constexpr int BCM_PASSWD     = 0x5A;
+static constexpr uint32_t CLK_LEN        = 0xB8;
+                       
+static constexpr uint32_t CLK_PWM_CTL_OFS  = 0xa0;
+static constexpr uint32_t CLK_PWM_DIV_OFS  = 0xa4;
+static constexpr uint32_t CLK_SMI_CTL_OFS  = 0xb0;
+static constexpr uint32_t CLK_SMI_DIV_OFS  = 0xb4;
+                       
+static constexpr uint32_t CLK_SRC_GND    = 0;
+static constexpr uint32_t CLK_SRC_OSC    = 1;
+static constexpr uint32_t CLK_SRC_TDBG0  = 2;
+static constexpr uint32_t CLK_SRC_TDBG1  = 3;
+static constexpr uint32_t CLK_SRC_PLLA   = 4;
+static constexpr uint32_t CLK_SRC_PLLC   = 5;
+static constexpr uint32_t CLK_SRC_PLLD   = 6;
+static constexpr uint32_t CLK_SRC_HDMI   = 7;
+                       
+static constexpr uint32_t BCM_PASSWD     = 0x5A;
 
 union ClockControl {
     struct {

@@ -2,20 +2,20 @@
 
 #include <cstdint>
 
-static constexpr int SPI_BASE_OFS  = 0x00204000;
-static constexpr int SPI_LEN  = 0x18;
-
-static constexpr int SPI_CS_OFS  = 0x00;
-static constexpr int SPI_FIFO_OFS  = 0x04;
-static constexpr int SPI_CDIV_OFS  = 0x08;
-static constexpr int SPI_DLEN_OFS  = 0x0c;
-static constexpr int SPI_DC_OFS  = 0x14;
-
-static constexpr int SPI0_GPIO_CE0  = 8;
-static constexpr int SPI0_GPIO_CE1  = 7;
-static constexpr int SPI0_GPIO_MISO  = 9;
-static constexpr int SPI0_GPIO_MOSI  = 10;
-static constexpr int SPI0_GPIO_SCLK  = 11;
+static constexpr uint32_t SPI_BASE_OFS  = 0x00204000;
+static constexpr uint32_t SPI_LEN  = 0x18;
+                       
+static constexpr uint32_t SPI_CS_OFS  = 0x00;
+static constexpr uint32_t SPI_FIFO_OFS  = 0x04;
+static constexpr uint32_t SPI_CDIV_OFS  = 0x08;
+static constexpr uint32_t SPI_DLEN_OFS  = 0x0c;
+static constexpr uint32_t SPI_DC_OFS  = 0x14;
+                       
+static constexpr uint32_t SPI0_GPIO_CE0  = 8;
+static constexpr uint32_t SPI0_GPIO_CE1  = 7;
+static constexpr uint32_t SPI0_GPIO_MISO  = 9;
+static constexpr uint32_t SPI0_GPIO_MOSI  = 10;
+static constexpr uint32_t SPI0_GPIO_SCLK  = 11;
 
 union SPIControlStatus {
     struct {
@@ -64,6 +64,6 @@ union SPIDMAControl {
  * Helper for things like Python extensions so we don't have to wrap the whole
  * struct.
  */
-inline constexpr int get_spi_flag_bits(uint32_t cs, uint32_t clk_pha, uint32_t clk_pol) {
+inline constexpr uint32_t get_spi_flag_bits(uint32_t cs, uint32_t clk_pha, uint32_t clk_pol) {
     return SPIControlStatus{{.cs=cs, .clk_pha=clk_pha, .clk_pol=clk_pol}}.bits;
 }

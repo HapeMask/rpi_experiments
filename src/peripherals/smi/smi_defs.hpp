@@ -5,28 +5,28 @@
 // https://elinux.org/BCM2835_registers#SMI
 // https://iosoft.blog/2020/07/16/raspberry-pi-smi/
 
-static constexpr int SMI_BASE_OFS  = 0x00600000;
-static constexpr int SMI_LEN  = 0x100;
+static constexpr uint32_t SMI_BASE_OFS  = 0x00600000;
+static constexpr uint32_t SMI_LEN  = 0x100;
 
-static constexpr int SMI_CS_OFS           = 0x00;
-static constexpr int SMI_LEN_OFS          = 0x04;
-static constexpr int SMI_ADDR_OFS         = 0x08;
-static constexpr int SMI_DATA_OFS         = 0x0c;
-static constexpr int SMI_DMA_CTL_OFS      = 0x30;
-static constexpr int SMI_DIRECT_CS_OFS    = 0x34;
-static constexpr int SMI_DIRECT_ADDR_OFS  = 0x38;
-static constexpr int SMI_DIRECT_DATA_OFS  = 0x3c;
-static constexpr int SMI_FIFO_DBG_OFS     = 0x40;
+static constexpr uint32_t SMI_CS_OFS           = 0x00;
+static constexpr uint32_t SMI_LEN_OFS          = 0x04;
+static constexpr uint32_t SMI_ADDR_OFS         = 0x08;
+static constexpr uint32_t SMI_DATA_OFS         = 0x0c;
+static constexpr uint32_t SMI_DMA_CTL_OFS      = 0x30;
+static constexpr uint32_t SMI_DIRECT_CS_OFS    = 0x34;
+static constexpr uint32_t SMI_DIRECT_ADDR_OFS  = 0x38;
+static constexpr uint32_t SMI_DIRECT_DATA_OFS  = 0x3c;
+static constexpr uint32_t SMI_FIFO_DBG_OFS     = 0x40;
 
-static constexpr int N_SMI_DEVICE_CFGS    = 4;
-inline constexpr int SMI_READ_CFG_OFS(int i)  { return 0x10 + 0x08 * i; }
-inline constexpr int SMI_WRITE_CFG_OFS(int i) { return 0x14 + 0x08 * i; }
+static constexpr uint32_t N_SMI_DEVICE_CFGS    = 4;
+inline constexpr uint32_t SMI_READ_CFG_OFS(int i)  { return 0x10 + 0x08 * i; }
+inline constexpr uint32_t SMI_WRITE_CFG_OFS(int i) { return 0x14 + 0x08 * i; }
 
 // Used in device config fields to set the parallel transfer width.
-static constexpr int SMI_WIDTH_8_BITS  = 0;
-static constexpr int SMI_WIDTH_16_BITS = 1;
-static constexpr int SMI_WIDTH_18_BITS = 2;
-static constexpr int SMI_WIDTH_9_BITS  = 3;
+static constexpr uint32_t SMI_WIDTH_8_BITS  = 0;
+static constexpr uint32_t SMI_WIDTH_16_BITS = 1;
+static constexpr uint32_t SMI_WIDTH_18_BITS = 2;
+static constexpr uint32_t SMI_WIDTH_9_BITS  = 3;
 
 union SMIControlStatus {
     struct {

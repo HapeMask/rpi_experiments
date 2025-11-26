@@ -2,28 +2,28 @@
 
 #include <cstdint>
 
-static constexpr int DMA_BASE_OFS   = 0x00007000;
-static constexpr int DMA_LEN        = 0xFF4;
+static constexpr uint32_t DMA_BASE_OFS   = 0x00007000;
+static constexpr uint32_t DMA_LEN        = 0xFF4;
 
-static constexpr int DMA_ENABLE_OFS = 0xFF0;
+static constexpr uint32_t DMA_ENABLE_OFS = 0xFF0;
 
-inline constexpr int DMA_CHAN_OFS(int chan)     { return 0x100 * chan; }
-inline constexpr int DMA_CS_OFS(int chan)       { return DMA_CHAN_OFS(chan) + 0x000; }
-inline constexpr int DMA_CB_ADDR_OFS(int chan)  { return DMA_CHAN_OFS(chan) + 0x004; }
-inline constexpr int DMA_TI_OFS(int chan)       { return DMA_CHAN_OFS(chan) + 0x008; }
-inline constexpr int DMA_SRC_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x00c; }
-inline constexpr int DMA_DST_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x010; }
-inline constexpr int DMA_LEN_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x014; }
-inline constexpr int DMA_STRIDE_OFS(int chan)   { return DMA_CHAN_OFS(chan) + 0x018; }
-inline constexpr int DMA_NEXT_CB_OFS(int chan)  { return DMA_CHAN_OFS(chan) + 0x01c; }
-inline constexpr int DMA_DEBUG_OFS(int chan)    { return DMA_CHAN_OFS(chan) + 0x020; }
+inline constexpr uint32_t DMA_CHAN_OFS(int chan)     { return 0x100 * chan; }
+inline constexpr uint32_t DMA_CS_OFS(int chan)       { return DMA_CHAN_OFS(chan) + 0x000; }
+inline constexpr uint32_t DMA_CB_ADDR_OFS(int chan)  { return DMA_CHAN_OFS(chan) + 0x004; }
+inline constexpr uint32_t DMA_TI_OFS(int chan)       { return DMA_CHAN_OFS(chan) + 0x008; }
+inline constexpr uint32_t DMA_SRC_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x00c; }
+inline constexpr uint32_t DMA_DST_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x010; }
+inline constexpr uint32_t DMA_LEN_OFS(int chan)      { return DMA_CHAN_OFS(chan) + 0x014; }
+inline constexpr uint32_t DMA_STRIDE_OFS(int chan)   { return DMA_CHAN_OFS(chan) + 0x018; }
+inline constexpr uint32_t DMA_NEXT_CB_OFS(int chan)  { return DMA_CHAN_OFS(chan) + 0x01c; }
+inline constexpr uint32_t DMA_DEBUG_OFS(int chan)    { return DMA_CHAN_OFS(chan) + 0x020; }
 
-static constexpr int DMA_PERI_MAP_SMI       = 4;
-static constexpr int DMA_PERI_MAP_PWM       = 5;
-static constexpr int DMA_PERI_MAP_SPI_TX    = 6;
-static constexpr int DMA_PERI_MAP_SPI_RX    = 7;
+static constexpr uint32_t DMA_PERI_MAP_SMI       = 4;
+static constexpr uint32_t DMA_PERI_MAP_PWM       = 5;
+static constexpr uint32_t DMA_PERI_MAP_SPI_TX    = 6;
+static constexpr uint32_t DMA_PERI_MAP_SPI_RX    = 7;
 
-static constexpr int N_DMA_CHANS            = 15; // ignore the physically separate one
+static constexpr uint32_t N_DMA_CHANS            = 15; // ignore the physically separate one
 
 union DMAControlStatus {
     struct {
