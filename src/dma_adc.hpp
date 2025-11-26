@@ -27,6 +27,7 @@ class DMAADC {
 
         std::tuple<std::vector<float>, std::vector<float>> get_buffers();
         float VDD() const { return _VDD; }
+        int n_samples() const { return _sample_buf.size(); }
 
     protected:
         float _timescale;

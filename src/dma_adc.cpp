@@ -146,11 +146,11 @@ void DMAADC::stop_sampling() {
 }
 
 std::tuple<std::vector<float>, std::vector<float>> DMAADC::get_buffers() {
-    const auto start = read_cntvct_el0();
+    //const auto start = read_cntvct_el0();
     _run_dma();
-    const auto end = read_cntvct_el0();
+    //const auto end = read_cntvct_el0();
     _stop_dma();
-    const float elapsed = (float)(end - start) * _timescale;
+    //const float elapsed = (float)(end - start) * _timescale;
 
     for(size_t i=0; i<_ts_buf.size(); ++i) {
         //const float t = (float)i / (_ts_buf.size() - 1);
