@@ -7,17 +7,19 @@
 #include "peripherals/peripheral.hpp"
 #include "peripherals/pwm/pwm_defs.hpp"
 #include "peripherals/clock/clock.hpp"
+#include "peripherals/clock/clock_defs.hpp"
 #include "utils/reg_mem_utils.hpp"
 
 
 class PWM : public Peripheral {
     public:
-        PWM(float duty_cycle, float freq, bool use_fifo=false);
+        PWM(bool use_fifo=false);
         virtual ~PWM();
 
-        void setup_clock(float duty_cycle, float freq);
+        void setup_clock(float duty_cycle, float freq, ClockSource clk_src);
         void start();
         void stop();
+
         void enable_dma(uint32_t dreq_thresh=7, uint32_t panic_thresh=7);
         void disable_dma();
 

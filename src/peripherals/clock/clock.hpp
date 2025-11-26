@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <vector>
 
 #include "peripherals/peripheral.hpp"
 #include "peripherals/clock/clock_defs.hpp"
@@ -11,6 +12,7 @@ class Clock : public Peripheral {
         virtual ~Clock();
 
         uint32_t start_clock(ClockID id, ClockSource src, float freq);
+        void kill_clock(ClockID id);
 
         volatile ClockControl* get_ctl_reg(ClockID id);
         volatile ClockDivider* get_div_reg(ClockID id);
@@ -18,4 +20,5 @@ class Clock : public Peripheral {
     protected:
         std::unordered_map<ClockID, volatile ClockControl*> _clk_ctl_regs;
         std::unordered_map<ClockID, volatile ClockDivider*> _clk_div_regs;
+        std::vector<ClockID> _started_clocks;
 };

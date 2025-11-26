@@ -6,7 +6,8 @@
 
 static std::unordered_map<ClockSource, uint32_t> CLOCK_HZ = {
     {ClockSource::OSC,   19200000},
-    {ClockSource::PLLD,  500000000}
+    {ClockSource::PLLD,  500000000},
+    {ClockSource::HDMI,  216000000},
 };
 
 static constexpr uint32_t ARM_TIMER_HZ = 250000000; // But not really...

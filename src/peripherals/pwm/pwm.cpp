@@ -8,7 +8,7 @@
 #include "peripherals/pwm/pwm.hpp"
 #include "peripherals/pwm/pwm_defs.hpp"
 
-PWM::PWM(float duty_cycle, float freq, bool use_fifo) :
+PWM::PWM(bool use_fifo) :
     Peripheral(PWM_BASE_OFS, PWM_LEN),
     _use_fifo(use_fifo)
 {
@@ -18,8 +18,6 @@ PWM::PWM(float duty_cycle, float freq, bool use_fifo) :
     _dat_reg = reg_addr(PWM0_DAT_OFS);
     _rng_reg = reg_addr(PWM0_RNG_OFS);
     _fif_reg = reg_addr(PWM0_FIF_OFS);
-
-    setup_clock(duty_cycle, freq);
 }
 
 PWM::~PWM() {
@@ -28,7 +26,7 @@ PWM::~PWM() {
     }
 }
 
-void PWM::setup_clock(float duty_cycle, float freq) {
+void PWM::setup_clock(float duty_cycle, float freq, ClockSource clk_src) {
     _duty_cycle = duty_cycle;
     _freq = freq;
 
@@ -40,12 +38,12 @@ void PWM::setup_clock(float duty_cycle, float freq) {
         throw std::runtime_error("Not implemented.");
     }
 
-    // Use the highest frequency (can't use full freq. since that results in a
-    // divider of 1) for the best precision when using M/S mode. Otherwise, try
-    // to get the PWM range to be as close as possible to the requested
-    // frequency.
-    const float tgt_freq = _use_m_s ? (CLOCK_HZ[ClockSource::PLLD] / 2) : freq;
-    const float real_clk_freq = _clock.start_clock(ClockID::PWM, ClockSource::PLLD, tgt_freq);
+    // Use the highest frequency for the best precision when using M/S mode.
+    // Clock manager doesn't seem to like using a divider of 1, so use half the
+    // frequency. Otherwise, try to get the PWM range to be as close as
+    // possible to the requested frequency.
+    const float tgt_freq = _use_m_s ? (CLOCK_HZ[clk_src] / 2) : freq;
+    const float real_clk_freq = _clock.start_clock(ClockID::PWM, clk_src, tgt_freq);
 
     write_reg_with_sleep(_sta_reg, ~0);
 

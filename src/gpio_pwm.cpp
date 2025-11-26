@@ -22,7 +22,7 @@ void shutdown(int signum) {
     exit(signum);
 }
 
-void validate_inputs(int pin, float duty_cycle, float freq, bool use_m_s) {
+void validate_inputs(int pin, float duty_cycle, float freq, bool use_m_s, ClockSource clk_src) {
     if (duty_cycle > 1 or duty_cycle < 0) {
         std::cerr << "Duty cycle must be a floating point value between 0 and 1." << std::endl;
         exit(1);
@@ -31,7 +31,7 @@ void validate_inputs(int pin, float duty_cycle, float freq, bool use_m_s) {
     float min_freq, max_freq;
     if (use_m_s) {
         min_freq = 0.f;
-        max_freq = CLOCK_HZ[ClockSource::PLLD];
+        max_freq = CLOCK_HZ[clk_src];
     } else {
         // TODO;
         min_freq = 0;
@@ -55,21 +55,23 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const ClockSource clk_src = ClockSource::PLLD;
     const int pin = std::stoi(argv[1]);
     const float duty_cycle = std::stof(argv[2]);
     const float freq = std::stof(argv[3]);
     const bool use_m_s = true;
 
-    validate_inputs(pin, duty_cycle, freq, use_m_s);
+    validate_inputs(pin, duty_cycle, freq, use_m_s, clk_src);
 
     signal(SIGINT, shutdown);
 
     GPIO gpio;
-    PWM pwm(duty_cycle, freq);
+    PWM pwm(/*use_fifo=*/false);
     pwm_ptr = &pwm;
 
     gpio.set_mode(pin, (pin == 18) ? GPIOMode::ALT_5 : GPIOMode::ALT_0);
 
+    pwm.setup_clock(duty_cycle, freq, clk_src);
     pwm.start();
 
     while (true) {
