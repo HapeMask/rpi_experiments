@@ -1,3 +1,3 @@
-add_library(dma OBJECT dma.cpp dma.hpp)
-#target_include_directories(dma PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(dma STATIC dma.cpp dma.hpp)
+target_link_libraries(dma peripheral mailbox)
 set_property(TARGET dma PROPERTY POSITION_INDEPENDENT_CODE ON)

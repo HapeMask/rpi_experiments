@@ -1,3 +1,3 @@
-add_library(gpio OBJECT gpio.cpp gpio.hpp)
-#target_include_directories(gpio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(gpio STATIC gpio.cpp gpio.hpp)
+target_link_libraries(gpio peripheral)
 set_property(TARGET gpio PROPERTY POSITION_INDEPENDENT_CODE ON)
