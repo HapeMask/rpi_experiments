@@ -2,10 +2,11 @@
 
 #include <cstdint>
 
+#include "peripherals/peripheral.hpp"
 #include "peripherals/spi/spi_defs.hpp"
 #include "utils/reg_mem_utils.hpp"
 
-class SPI {
+class SPI : public Peripheral {
     public:
         SPI(uint32_t speed, SPIControlStatus init_status);
         virtual ~SPI();
@@ -25,13 +26,10 @@ class SPI {
     protected:
         uint32_t _speed;
 
-        void* _virt_spi_regs = nullptr;
         volatile SPIControlStatus* _cs_reg = nullptr;
         volatile uint32_t* _fifo_reg = nullptr;
         volatile uint32_t* _cdiv_reg = nullptr;
         volatile uint32_t* _dlen_reg = nullptr;
         volatile SPIDMAControl* _dc_reg = nullptr;
         SPIControlStatus _orig_cs = {};
-
-        AddressSpaceInfo _asi;
 };

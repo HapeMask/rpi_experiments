@@ -8,10 +8,6 @@
 
 struct AddressSpaceInfo;
 
-inline volatile uint32_t* reg_addr(void* base, uint32_t ofs_bytes) {
-    return (volatile uint32_t*)((uint8_t*)base + ofs_bytes);
-}
-
 void* map_phys_block(const void* phys_addr, size_t size, size_t page_size);
 void unmap_phys_block(void* phys_addr, size_t size, size_t page_size);
 void* virt_to_phys(const void* virt_addr, uint32_t page_size);

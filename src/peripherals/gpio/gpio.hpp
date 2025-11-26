@@ -1,9 +1,10 @@
 #pragma once
 
 #include "peripherals/gpio/gpio_defs.hpp"
+#include "peripherals/peripheral.hpp"
 #include "utils/reg_mem_utils.hpp"
 
-class GPIO {
+class GPIO : public Peripheral {
     public:
         GPIO();
         virtual ~GPIO();
@@ -17,10 +18,8 @@ class GPIO {
         void clear_pin(int pin) const;
         bool get_level(int pin) const;
         void set_mode(int pin, GPIOMode mode) const;
-        void* reg_to_bus(uint32_t reg_ofs_bytes) const;
 
     protected:
-        void* _virt_gpio_regs = nullptr;
         volatile uint32_t* _mode_regs[N_GPIO_MODE_REGS];
         volatile uint32_t* _set_regs[N_GPIO_SET_CLR_REGS];
         volatile uint32_t* _clr_regs[N_GPIO_SET_CLR_REGS];
@@ -32,6 +31,4 @@ class GPIO {
         uint32_t _orig_set[N_GPIO_SET_CLR_REGS];
         uint32_t _orig_clr[N_GPIO_SET_CLR_REGS];
         uint32_t _orig_lvl[N_GPIO_LVL_REGS];
-
-        AddressSpaceInfo _asi;
 };

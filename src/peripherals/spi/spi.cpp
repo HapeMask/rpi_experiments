@@ -7,14 +7,15 @@
 // Change include for your device.
 #include "utils/rpi_zero_2.hpp"
 
-SPI::SPI(uint32_t speed, SPIControlStatus init_status) : _speed(speed) {
-    _virt_spi_regs = map_phys_block((void*)(_asi.phys_mmio_base + SPI_BASE_OFS), SPI_LEN, _asi.page_size);
-
-    _cs_reg = (volatile SPIControlStatus*)reg_addr(_virt_spi_regs, SPI_CS_OFS);
-    _fifo_reg = reg_addr(_virt_spi_regs, SPI_FIFO_OFS);
-    _cdiv_reg = reg_addr(_virt_spi_regs, SPI_CDIV_OFS);
-    _dlen_reg = reg_addr(_virt_spi_regs, SPI_DLEN_OFS);
-    _dc_reg = (volatile SPIDMAControl*)reg_addr(_virt_spi_regs, SPI_DC_OFS);
+SPI::SPI(uint32_t speed, SPIControlStatus init_status) :
+    Peripheral(SPI_BASE_OFS, SPI_LEN),
+    _speed(speed)
+{
+    _cs_reg = (volatile SPIControlStatus*)reg_addr(SPI_CS_OFS);
+    _fifo_reg = reg_addr(SPI_FIFO_OFS);
+    _cdiv_reg = reg_addr(SPI_CDIV_OFS);
+    _dlen_reg = reg_addr(SPI_DLEN_OFS);
+    _dc_reg = (volatile SPIDMAControl*)reg_addr(SPI_DC_OFS);
 
     _orig_cs.bits = _cs_reg->bits;
     _cs_reg->bits = init_status.bits;
@@ -23,9 +24,8 @@ SPI::SPI(uint32_t speed, SPIControlStatus init_status) : _speed(speed) {
 }
 
 SPI::~SPI() {
-    if (_virt_spi_regs) {
+    if (_virt_regs_ptr) {
         _cs_reg->bits = _orig_cs.bits;
-        unmap_phys_block((void*)(_asi.phys_mmio_base + SPI_BASE_OFS), SPI_LEN, _asi.page_size);
     }
 }
 

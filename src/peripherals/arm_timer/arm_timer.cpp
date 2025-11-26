@@ -2,18 +2,14 @@
 #include <thread>
 
 #include "peripherals/arm_timer/arm_timer.hpp"
+#include "peripherals/arm_timer/arm_timer_defs.hpp"
 
-ARMTimer::ARMTimer() {
-    _virt_timer_regs = map_phys_block((void*)(_asi.phys_mmio_base + ARM_TIMER_BASE_OFS), ARM_TIMER_LEN, _asi.page_size);
-    _ctl_reg = (volatile TimerControl*) reg_addr(_virt_timer_regs, ARM_TIMER_CTL_OFS);
-    _free_ctr_reg = reg_addr(_virt_timer_regs, ARM_TIMER_FREE_CTR_OFS);
+ARMTimer::ARMTimer() : Peripheral(ARM_TIMER_BASE_OFS, ARM_TIMER_LEN) {
+    _ctl_reg = (volatile TimerControl*) reg_addr(ARM_TIMER_CTL_OFS);
+    _free_ctr_reg = reg_addr(ARM_TIMER_FREE_CTR_OFS);
 }
 
-ARMTimer::~ARMTimer() {
-    if (_virt_timer_regs) {
-        unmap_phys_block((void*)(_asi.phys_mmio_base + ARM_TIMER_BASE_OFS), ARM_TIMER_LEN, _asi.page_size);
-    }
-}
+ARMTimer::~ARMTimer() { }
 
 void ARMTimer::start() {
     _ctl_reg->bits = ARM_TIMER_RESET_BITS;
@@ -23,4 +19,8 @@ void ARMTimer::start() {
 
 void ARMTimer::stop() {
     _ctl_reg->bits = ARM_TIMER_RESET_BITS;
+}
+
+uint32_t ARMTimer::read() const {
+    return *_free_ctr_reg;
 }

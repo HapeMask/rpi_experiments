@@ -1,4 +1,9 @@
+add_library(peripheral STATIC peripheral.cpp peripheral.hpp)
+target_link_libraries(peripheral reg_mem_utils)
+set_property(TARGET peripheral PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 add_subdirectory(arm_timer)
+add_subdirectory(clock)
 add_subdirectory(dma)
 add_subdirectory(gpio)
 add_subdirectory(mailbox)

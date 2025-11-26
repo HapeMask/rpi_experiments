@@ -11,29 +11,23 @@
 #include "peripherals/dma/dma_defs.hpp"
 #include "utils/reg_mem_utils.hpp"
 
-DMA::DMA(int n_cbs) : _max_cbs(0) {
-    _virt_dma_regs = map_phys_block((void*)(_asi.phys_mmio_base + DMA_BASE_OFS), DMA_LEN, _asi.page_size);
-
-    _enable_reg = reg_addr(_virt_dma_regs, DMA_ENABLE_OFS);
+DMA::DMA(int n_cbs) : Peripheral(DMA_BASE_OFS, DMA_LEN), _max_cbs(0) {
+    _enable_reg = reg_addr(DMA_ENABLE_OFS);
 
     for(int i=0; i < N_DMA_CHANS; ++i) {
-        _cs_regs[i] = (volatile DMAControlStatus*)reg_addr(_virt_dma_regs, DMA_CS_OFS(i));
-        _cb_addr_regs[i] = reg_addr(_virt_dma_regs, DMA_CB_ADDR_OFS(i));
-        _ti_regs[i] = (volatile DMATransferInfo*)reg_addr(_virt_dma_regs, DMA_TI_OFS(i));
-        _src_regs[i] = reg_addr(_virt_dma_regs, DMA_SRC_OFS(i));
-        _dst_regs[i] = reg_addr(_virt_dma_regs, DMA_DST_OFS(i));
-        _len_regs[i] = reg_addr(_virt_dma_regs, DMA_LEN_OFS(i));
-        _debug_regs[i] = reg_addr(_virt_dma_regs, DMA_DEBUG_OFS(i));
+        _cs_regs[i] = (volatile DMAControlStatus*)reg_addr(DMA_CS_OFS(i));
+        _cb_addr_regs[i] = reg_addr(DMA_CB_ADDR_OFS(i));
+        _ti_regs[i] = (volatile DMATransferInfo*)reg_addr(DMA_TI_OFS(i));
+        _src_regs[i] = reg_addr(DMA_SRC_OFS(i));
+        _dst_regs[i] = reg_addr(DMA_DST_OFS(i));
+        _len_regs[i] = reg_addr(DMA_LEN_OFS(i));
+        _debug_regs[i] = reg_addr(DMA_DEBUG_OFS(i));
     }
 
     resize_cbs(n_cbs);
 }
 
 DMA::~DMA() {
-    if (_virt_dma_regs) {
-        unmap_phys_block((void*)(_asi.phys_mmio_base + DMA_BASE_OFS), DMA_LEN, _asi.page_size);
-    }
-
     if (_cb_mem.virt) {
         if (_use_vc_mem) {
             _mbox.free_vc_mem(_cb_mem);
