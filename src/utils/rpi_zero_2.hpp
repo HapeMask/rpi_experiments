@@ -7,6 +7,7 @@
 static std::unordered_map<ClockSource, uint32_t> CLOCK_HZ = {
     {ClockSource::OSC,   19200000},
     {ClockSource::PLLD,  500000000},
+    {ClockSource::PLLC,  1000000000},
     {ClockSource::HDMI,  216000000},
 };
 
