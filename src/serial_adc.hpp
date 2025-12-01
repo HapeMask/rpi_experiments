@@ -10,18 +10,18 @@
 #include "utils/reg_mem_utils.hpp"
 #include "utils/rpi_zero_2.hpp"
 
-class DMAADC {
+class SerialADC {
     public:
-        DMAADC(
+        SerialADC(
             int spi_speed,
             uint32_t spi_flag_bits,
             float vdd,
             int n_samples=16384,
             int rx_block_size=32768
         );
-        virtual ~DMAADC();
+        virtual ~SerialADC();
 
-        void start_sampling();
+        uint32_t start_sampling(uint32_t sample_rate_hz);
         void stop_sampling();
         void resize(int n_samples);
 

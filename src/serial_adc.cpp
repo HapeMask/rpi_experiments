@@ -10,14 +10,14 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "dma_adc.hpp"
 #include "peripherals/gpio/gpio.hpp"
 #include "peripherals/spi/spi.hpp"
 #include "peripherals/spi/spi_defs.hpp"
+#include "serial_adc.hpp"
 #include "utils/reg_mem_utils.hpp"
 #include "utils/rpi_zero_2.hpp"
 
-DMAADC::DMAADC(int spi_speed, uint32_t spi_flag_bits, float vdd, int n_samples, int rx_block_size) :
+SerialADC::SerialADC(int spi_speed, uint32_t spi_flag_bits, float vdd, int n_samples, int rx_block_size) :
     _rx_block_size(rx_block_size),
     _spi(spi_speed, {.bits=spi_flag_bits}),
     _VDD(vdd)
@@ -32,7 +32,7 @@ DMAADC::DMAADC(int spi_speed, uint32_t spi_flag_bits, float vdd, int n_samples, 
     _gpio.set_mode(SPI0_GPIO_MOSI, GPIOMode::ALT_0);
 }
 
-DMAADC::~DMAADC() {
+SerialADC::~SerialADC() {
     if (_dma._use_vc_mem && _data.vc_handle) {
         _dma._mbox.free_vc_mem(_data);
     } else if (_data.virt) {
@@ -40,7 +40,7 @@ DMAADC::~DMAADC() {
     }
 }
 
-void DMAADC::resize(int n_samples) {
+void SerialADC::resize(int n_samples) {
     _sample_buf.resize(n_samples);
     _ts_buf.resize(n_samples);
 
@@ -66,7 +66,7 @@ void DMAADC::resize(int n_samples) {
     _setup_dma_cbs();
 }
 
-void DMAADC::_setup_dma_cbs() {
+void SerialADC::_setup_dma_cbs() {
     const int n_samples = _sample_buf.size();
     const int n_rx_cbs = ((2 * n_samples) + (_rx_block_size - 1)) / _rx_block_size;
 
@@ -124,14 +124,14 @@ void DMAADC::_setup_dma_cbs() {
     }
 }
 
-void DMAADC::_run_dma() {
+void SerialADC::_run_dma() {
     _spi.start_dma(4, 8, 4, 8);
     _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
     _dma.start(_dma_chan_1, /*first_cb_idx=*/2);
     _dma.wait(_dma_chan_1);
 }
 
-void DMAADC::_stop_dma() {
+void SerialADC::_stop_dma() {
     _dma.reset(_dma_chan_0);
     _dma.reset(_dma_chan_1);
     _dma.disable(_dma_chan_0);
@@ -139,13 +139,14 @@ void DMAADC::_stop_dma() {
     _spi.stop_dma();
 }
 
-void DMAADC::start_sampling() {
+uint32_t SerialADC::start_sampling(uint32_t sample_rate_hz) {
+    return sample_rate_hz / 16;
 }
 
-void DMAADC::stop_sampling() {
+void SerialADC::stop_sampling() {
 }
 
-std::tuple<std::vector<float>, std::vector<float>> DMAADC::get_buffers() {
+std::tuple<std::vector<float>, std::vector<float>> SerialADC::get_buffers() {
     //const auto start = read_cntvct_el0();
     _run_dma();
     //const auto end = read_cntvct_el0();
