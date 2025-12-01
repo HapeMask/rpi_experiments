@@ -14,28 +14,25 @@ include_directories(src)
 add_subdirectory(src/peripherals)
 add_subdirectory(src/utils)
 
-add_library(buffered_adc STATIC src/buffered_adc.cpp)
-target_link_libraries(buffered_adc PRIVATE dma)
-set_property(TARGET buffered_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
+add_library(serial_adc STATIC src/serial_adc.cpp)
+target_link_libraries(serial_adc clock dma gpio spi)
+set_property(TARGET serial_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-add_library(dma_adc STATIC src/dma_adc.cpp)
-target_link_libraries(dma_adc PRIVATE dma)
-set_property(TARGET dma_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
-
-add_executable(dma_test src/dma_test.cpp)
-target_link_libraries(dma_test PRIVATE dma spi gpio pwm)
-
-add_executable(dma_adc_test src/dma_adc_test.cpp)
-target_link_libraries(dma_adc_test PRIVATE dma dma_adc spi gpio pwm)
-
-add_executable(gpio_osc src/gpio_osc.cpp)
-target_link_libraries(gpio_osc PRIVATE gpio)
+add_library(parallel_adc STATIC src/parallel_adc.cpp)
+target_link_libraries(parallel_adc clock dma gpio smi)
+set_property(TARGET parallel_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_executable(gpio_pwm src/gpio_pwm.cpp)
-target_link_libraries(gpio_pwm PRIVATE gpio pwm)
+target_link_libraries(gpio_pwm gpio pwm)
+
+add_executable(gpclk_test src/gpclk_test.cpp)
+target_link_libraries(gpclk_test clock gpio)
 
 pybind11_add_module(ads7884 src/ads7884.cpp)
-target_link_libraries(ads7884 PRIVATE arm_timer buffered_adc dma dma_adc gpio spi)
+target_link_libraries(ads7884 PRIVATE serial_adc parallel_adc)
+
+# WHY ???
+target_link_libraries(ads7884 PRIVATE -Wl,--whole-archive clock -Wl,--no-whole-archive)
 
 add_custom_target(copy_py
     ALL # This ensures the target is built as part of the default build process
