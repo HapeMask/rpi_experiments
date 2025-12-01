@@ -1,6 +1,8 @@
 #pragma once
 
 #include "peripherals/peripheral.hpp"
+#include "peripherals/clock/clock.hpp"
+#include "peripherals/clock/clock_defs.hpp"
 #include "peripherals/smi/smi_defs.hpp"
 #include "utils/reg_mem_utils.hpp"
 
@@ -9,9 +11,20 @@ class SMI : public Peripheral {
         SMI();
         virtual ~SMI();
 
-        void* reg_to_bus(uint32_t reg_ofs_bytes) const;
+        uint32_t setup_timing(
+            uint32_t tgt_sample_rate=1000000, ClockSource clk_src=ClockSource::PLLD
+        );
+        void setup_device_settings(
+            SMIWidth xfer_width_bits, uint32_t device_id=0, bool use_dma=true
+        );
+
+        void start_xfer(int n_samples, bool packed);
+        void stop_xfer();
 
     protected:
+        Clock _clock;
+        uint32_t _setup_clks, _strobe_clks, _hold_clks;
+
         volatile SMIControlStatus* _cs_reg = nullptr;
         volatile uint32_t* _len_reg = nullptr;
         volatile SMIAddress* _addr_reg = nullptr;

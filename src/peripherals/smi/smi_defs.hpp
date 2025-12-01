@@ -22,11 +22,12 @@ static constexpr uint32_t N_SMI_DEVICE_CFGS    = 4;
 inline constexpr uint32_t SMI_READ_CFG_OFS(int i)  { return 0x10 + 0x08 * i; }
 inline constexpr uint32_t SMI_WRITE_CFG_OFS(int i) { return 0x14 + 0x08 * i; }
 
-// Used in device config fields to set the parallel transfer width.
-static constexpr uint32_t SMI_WIDTH_8_BITS  = 0;
-static constexpr uint32_t SMI_WIDTH_16_BITS = 1;
-static constexpr uint32_t SMI_WIDTH_18_BITS = 2;
-static constexpr uint32_t SMI_WIDTH_9_BITS  = 3;
+enum class SMIWidth : uint32_t {
+    _8_BITS  = 0,
+    _16_BITS = 1,
+    _18_BITS = 2,
+    _9_BITS  = 3
+};
 
 union SMIControlStatus {
     struct {
@@ -70,14 +71,14 @@ union SMIAddress {
 
 union SMIDMAControl {
     struct {
-        uint32_t dma_req_write  : 6 = 0;
-        uint32_t dma_req_read   : 6 = 0;
-        uint32_t panic_write    : 6 = 0;
-        uint32_t panic_read     : 6 = 0;
-        uint32_t dmap           : 1 = 0;
-        uint32_t unused_1       : 3 = 0;
-        uint32_t dma_enable     : 1 = 0;
-        uint32_t unused_2       : 3 = 0;
+        uint32_t dma_req_thresh_write   : 6 = 0;
+        uint32_t dma_req_thresh_read    : 6 = 0;
+        uint32_t panic_write            : 6 = 0;
+        uint32_t panic_read             : 6 = 0;
+        uint32_t dmap                   : 1 = 0;
+        uint32_t unused_1               : 3 = 0;
+        uint32_t dma_enable             : 1 = 0;
+        uint32_t unused_2               : 3 = 0;
     } flags;
     uint32_t bits;
 };
@@ -92,7 +93,7 @@ union SMIDeviceConfigRead {
         uint32_t fsetup	    : 1 = 0;
         uint32_t mode68	    : 1 = 0;
         uint32_t setup	    : 6 = 0;
-        uint32_t width	    : 2 = 0;
+        SMIWidth width	    : 2 = SMIWidth::_8_BITS;
     } flags;
     uint32_t bits;
 };
@@ -107,7 +108,7 @@ union SMIDeviceConfigWrite {
         uint32_t swap	    : 1 = 0;
         uint32_t format	    : 1 = 0;
         uint32_t setup	    : 6 = 0;
-        uint32_t width	    : 2 = 0;
+        SMIWidth width	    : 2 = SMIWidth::_8_BITS;
     } flags;
     uint32_t bits;
 };
