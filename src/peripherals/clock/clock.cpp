@@ -48,14 +48,16 @@ uint32_t Clock::start_clock(ClockID id, ClockSource src, float freq) {
     kill_clock(id);
 
     // Compute the divider for the target frequency.
-    const uint32_t clk_div_i = clk_hz / freq;
+    const uint32_t clk_div_i = (freq == clk_hz) ? 0 : (clk_hz / freq);
 
-    if (clk_div_i < 2 || clk_div_i > 4095) {
+    // TODO: Compute div_f? Will it help?
+
+    if (clk_div_i > 4095) {
         std::ostringstream ss;
         ss << "Desired frequency " << freq
            << "Hz and source clock frequency " << clk_hz
            << "Hz gives a bad clock divider: " << clk_div_i
-           << ". Must be in [2, 4095].";
+           << ". Must be in [1, 4095].";
         throw std::runtime_error(ss.str());
     }
 
@@ -69,7 +71,7 @@ uint32_t Clock::start_clock(ClockID id, ClockSource src, float freq) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    const uint32_t real_clk_freq = (clk_hz / clk_div_i);
+    const uint32_t real_clk_freq = (clk_div_i == 0) ? clk_hz : (clk_hz / clk_div_i);
     _started_clocks.push_back(id);
     return real_clk_freq;
 }
