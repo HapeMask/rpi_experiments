@@ -2,6 +2,7 @@
 #include <vector>
 #include <thread>
 #include <semaphore>
+#include <utility>
 
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
@@ -15,7 +16,7 @@ class SerialADC {
         SerialADC(
             int spi_speed,
             uint32_t spi_flag_bits,
-            float vdd,
+            std::pair<float, float> vref,
             int n_samples=16384,
             int rx_block_size=32768
         );
@@ -26,7 +27,7 @@ class SerialADC {
         void resize(int n_samples);
 
         std::tuple<std::vector<float>, std::vector<float>> get_buffers();
-        float VDD() const { return _VDD; }
+        std::pair<float, float> VREF() const { return _VREF; }
         int n_samples() const { return _sample_buf.size(); }
 
     protected:
@@ -53,5 +54,5 @@ class SerialADC {
 
         std::vector<float> _sample_buf;
         std::vector<float> _ts_buf;
-        float _VDD;
+        std::pair<float, float> _VREF;
 };

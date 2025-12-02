@@ -4,18 +4,18 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from ads7884 import get_spi_flag_bits, BufferedADC
+from ads7884 import get_spi_flag_bits, SerialADC
 
 
 N = 100000
-VDD = 5.23
+VREF = (0.0, 5.23)
 
 #val = (0x28 << 4) | (0xf0 >> 4)
 #val = 0x28f
 #val = 0b1010001111
 #mea = 3.1982421875 V
 
-#adc = BufferedADC(8000000, get_spi_flag_bits(clk_pha=1), VDD, 1024)
+#adc = SerialADC(8000000, get_spi_flag_bits(clk_pha=1), VREF, 1024)
 #adc.start_sampling()
 #time.sleep(1)
 #samples, timestamps = adc.get_buffers()
@@ -27,7 +27,7 @@ vals = []
 markers = []
 for spi_freq in tqdm(freqs):
     spi_freq = int(spi_freq)
-    adc = BufferedADC(spi_freq, get_spi_flag_bits(clk_pha=1), VDD, N)
+    adc = SerialADC(spi_freq, get_spi_flag_bits(clk_pha=1), VREF, N)
     adc.use_arm_timer = False
 
     start = time.time()
@@ -42,8 +42,8 @@ for spi_freq in tqdm(freqs):
 
     vals.append(msps)
 
-    #assert abs(mval - VDD) < 0.15, f"Bad max: {mval:0.2f}"
-    if abs(mval - VDD) >= 0.15:
+    #assert abs(mval - VREF[1]) < 0.15, f"Bad max: {mval:0.2f}"
+    if abs(mval - VREF[1]) >= 0.15:
         #print(f"Bad max: {mval:0.2f} for {spi_freq * 1e-6:0.2f} MHz")
         markers.append("x")
     else:

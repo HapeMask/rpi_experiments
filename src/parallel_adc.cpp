@@ -7,8 +7,8 @@
 #include "utils/rpi_zero_2.hpp"
 
 
-ParallelADC::ParallelADC(float vdd, int n_samples, int n_channels) :
-    _VDD(vdd)
+ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_channels) :
+    _VREF(vref)
 {
     // Clock
     _gpio.set_mode(6, GPIOMode::ALT_1);
@@ -131,7 +131,7 @@ int ParallelADC::n_active_channels() const {
 }
 
 float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
-    return _VDD * ((float)raw_sample / 255.f);
+    return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
 }
 
 std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {

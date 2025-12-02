@@ -17,10 +17,10 @@
 #include "utils/reg_mem_utils.hpp"
 #include "utils/rpi_zero_2.hpp"
 
-SerialADC::SerialADC(int spi_speed, uint32_t spi_flag_bits, float vdd, int n_samples, int rx_block_size) :
+SerialADC::SerialADC(int spi_speed, uint32_t spi_flag_bits, std::pair<float, float> vref, int n_samples, int rx_block_size) :
     _rx_block_size(rx_block_size),
     _spi(spi_speed, {.bits=spi_flag_bits}),
-    _VDD(vdd)
+    _VREF(vref)
 {
     resize(n_samples);
     _timescale = 1.f / (float)CLOCK_HZ[ClockSource::OSC];
@@ -159,7 +159,7 @@ std::tuple<std::vector<float>, std::vector<float>> SerialADC::get_buffers() {
         _ts_buf[i] = i;
 
         _sample_buf[i] = (
-            _VDD * (float)(
+            _VREF.first + (_VREF.second - _VREF.first) * (float)(
                 ((uint32_t)_rx_data_virt[2 * i + 0] << 4) |
                 ((uint32_t)_rx_data_virt[2 * i + 1] >> 4)
             ) / 1024.f

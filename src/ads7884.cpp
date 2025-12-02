@@ -14,13 +14,13 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
 
     py::class_<SerialADC>(m, "SerialADC")
         .def(
-            py::init<int, int, float, int>(),
+            py::init<int, int, std::pair<float, float>, int>(),
             py::arg("spi_speed"),
             py::arg("spi_flag_bits"),
-            py::arg("VDD"),
+            py::arg("VREF")=std::make_pair(0.0f, 5.23f),
             py::arg("n_samples")=16384
         )
-        .def_property("VDD", &SerialADC::VDD, nullptr)
+        .def_property("VREF", &SerialADC::VREF, nullptr)
         .def_property("n_samples", &SerialADC::n_samples, nullptr)
         .def("get_buffers", &SerialADC::get_buffers)
         .def("start_sampling", &SerialADC::start_sampling)
@@ -28,11 +28,12 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
 
     py::class_<ParallelADC>(m, "ParallelADC")
         .def(
-            py::init<float, int>(),
-            py::arg("VDD"),
-            py::arg("n_samples")=16384
+            py::init<std::pair<float, float>, int, int>(),
+            py::arg("VREF")=std::make_pair(0.f, 5.23f),
+            py::arg("n_samples")=16384,
+            py::arg("n_channels")=2
         )
-        .def_property("VDD", &ParallelADC::VDD, nullptr)
+        .def_property("VREF", &ParallelADC::VREF, nullptr)
         .def_property("n_samples", &ParallelADC::n_samples, nullptr)
         .def("get_buffers", &ParallelADC::get_buffers)
         .def("start_sampling", &ParallelADC::start_sampling)

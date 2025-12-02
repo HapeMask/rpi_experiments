@@ -247,7 +247,8 @@ class Oscilloscope(QApplication):
 
     def reset_graph_range(self):
         self.graph.setXRange(0, self.adc.n_samples / self.adc_sample_rate)
-        self.graph.setYRange(0, self.adc.VDD)
+        vref = self.adc.VREF
+        self.graph.setYRange(vref[0], vref[1])
 
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
@@ -349,7 +350,7 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VDD=5.23, n_samples=4096)
+    adc = ParallelADC(VREF=(0.0, 5.23), n_samples=4096)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)

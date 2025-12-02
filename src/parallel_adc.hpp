@@ -3,6 +3,8 @@
 #include <thread>
 #include <semaphore>
 
+#include <utility>
+
 #include "peripherals/clock/clock.hpp"
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
@@ -11,7 +13,7 @@
 
 class ParallelADC {
     public:
-        ParallelADC(float vdd, int n_samples=16384, int n_channels=2);
+        ParallelADC(std::pair<float, float> vref, int n_samples=16384, int n_channels=2);
         virtual ~ParallelADC();
 
         uint32_t start_sampling(uint32_t sample_rate_hz);
@@ -20,12 +22,12 @@ class ParallelADC {
         void resize(int n_samples, int n_channels);
 
         std::vector<std::vector<std::tuple<float, float>>> get_buffers();
-        float VDD() const { return _VDD; }
+        std::pair<float, float> VREF() const { return _VREF; }
         int n_samples() const { return _n_samples; }
         int n_active_channels() const;
 
     protected:
-        float _VDD;
+        std::pair<float, float> _VREF;
         int _n_samples;
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
