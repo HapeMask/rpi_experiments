@@ -53,7 +53,7 @@ void* virt_to_phys(const void* virt_addr, uint32_t page_size) {
     const auto page_ofs = page_idx * sizeof(page_info);
 
     int fd = open("/proc/self/pagemap", 'r');
-    if (lseek(fd, page_ofs, SEEK_SET) != page_ofs) {
+    if (lseek(fd, page_ofs, SEEK_SET) != static_cast<__off_t>(page_ofs)) {
         throw std::runtime_error("Failed to find entry in pagemap. Are you running as root?");
     }
 

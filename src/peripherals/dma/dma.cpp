@@ -14,7 +14,7 @@
 DMA::DMA(int n_cbs) : Peripheral(DMA_BASE_OFS, DMA_LEN), _max_cbs(0) {
     _enable_reg = reg_addr(DMA_ENABLE_OFS);
 
-    for(int i=0; i < N_DMA_CHANS; ++i) {
+    for(uint32_t i=0; i < N_DMA_CHANS; ++i) {
         _cs_regs[i] = (volatile DMAControlStatus*)reg_addr(DMA_CS_OFS(i));
         _cb_addr_regs[i] = reg_addr(DMA_CB_ADDR_OFS(i));
         _ti_regs[i] = (volatile DMATransferInfo*)reg_addr(DMA_TI_OFS(i));
@@ -105,7 +105,7 @@ const DMAControlBlock* DMA::get_cb_bus_ptr(size_t i) const {
 }
 
 void DMA::show_active_dma_chans() const {
-    for (int i=0; i < N_DMA_CHANS; ++i) {
+    for (uint32_t i=0; i < N_DMA_CHANS; ++i) {
         const bool global_enable = (*_enable_reg) & (1 << i);
         const bool enabled = global_enable && ((*_src_regs[i] != 0) || (*_dst_regs[i] != 0));
         if (enabled) {

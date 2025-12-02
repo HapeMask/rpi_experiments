@@ -62,7 +62,7 @@ SMI::SMI() : Peripheral(SMI_BASE_OFS, SMI_LEN) {
     _addr_reg = (volatile SMIAddress*) reg_addr(SMI_ADDR_OFS);
     _data_reg = reg_addr(SMI_DATA_OFS);
 
-    for(int i=0; i<N_SMI_DEVICE_CFGS; ++i) {
+    for(uint32_t i=0; i<N_SMI_DEVICE_CFGS; ++i) {
         _read_cfg_regs[i] = (
             (volatile SMIDeviceConfigRead*)
             reg_addr(SMI_READ_CFG_OFS(i))

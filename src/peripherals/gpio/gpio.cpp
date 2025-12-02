@@ -1,19 +1,19 @@
 #include "peripherals/gpio/gpio.hpp"
 
 GPIO::GPIO() : Peripheral(GPIO_BASE_OFS, GPIO_LEN) {
-    for(int i=0; i < N_GPIO_SET_CLR_REGS; ++i) {
+    for(uint32_t i=0; i < N_GPIO_SET_CLR_REGS; ++i) {
         _set_regs[i] = reg_addr(GPIO_OUT_SET_OFS) + i;
         _clr_regs[i] = reg_addr(GPIO_OUT_CLR_OFS) + i;
         _orig_set[i] = *_set_regs[i];
         _orig_clr[i] = *_clr_regs[i];
     }
 
-    for(int i=0; i < N_GPIO_MODE_REGS; ++i) {
+    for(uint32_t i=0; i < N_GPIO_MODE_REGS; ++i) {
         _mode_regs[i] = reg_addr(GPIO_MODE_OFS) + i;
         _orig_mode[i] = *_mode_regs[i];
     }
 
-    for(int i=0; i < N_GPIO_LVL_REGS; ++i) {
+    for(uint32_t i=0; i < N_GPIO_LVL_REGS; ++i) {
         _lvl_regs[i] = reg_addr(GPIO_LVL_OFS) + i;
     }
 }
@@ -21,12 +21,12 @@ GPIO::GPIO() : Peripheral(GPIO_BASE_OFS, GPIO_LEN) {
 GPIO::~GPIO() {
     if (_virt_regs_ptr) {
         // Clean up nicely by restoring initial values in the registers.
-        for(int i=0; i < N_GPIO_SET_CLR_REGS; ++i) {
+        for(uint32_t i=0; i < N_GPIO_SET_CLR_REGS; ++i) {
             *_set_regs[i] = _orig_set[i];
             *_clr_regs[i] = _orig_clr[i];
         }
 
-        for(int i=0; i < N_GPIO_MODE_REGS; ++i) {
+        for(uint32_t i=0; i < N_GPIO_MODE_REGS; ++i) {
             *_mode_regs[i] = _orig_mode[i];
         }
     }

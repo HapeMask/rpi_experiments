@@ -8,7 +8,7 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 
 find_package(pybind11 CONFIG REQUIRED)
 
-add_compile_options(-g -O0 -Wall -Wextra -fdebug-prefix-map=/home/debian/macos/rpi_experiments=..)
+add_compile_options(-g -O0 -Wall -Wextra -Wno-missing-field-initializers -fdebug-prefix-map=/home/debian/macos/rpi_experiments=..)
 include_directories(src)
 
 add_subdirectory(src/peripherals)

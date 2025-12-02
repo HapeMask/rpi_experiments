@@ -63,7 +63,7 @@ void SPI::xfer(const char* tx_buf, char* rx_buf, size_t n_bytes) const {
             if (rx_buf) {
                 rx_buf[rx_cnt] = *_fifo_reg;
             } else {
-                int junk = *_fifo_reg;
+                (void)*_fifo_reg;
             }
             ++rx_cnt;
         }

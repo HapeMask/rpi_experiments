@@ -147,7 +147,7 @@ std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {
     // If only the first channel is active, each uint16_t contains two packed
     // samples, swapped because SMI things (see doc PDF re:XRGB).
     if (_highest_active_channel() == 0) {
-        for (size_t i=0; i < _n_samples / 2; ++i) {
+        for (int i=0; i < _n_samples / 2; ++i) {
             _sample_bufs[0][2 * i + 0] = {
                 _sample_to_float((_rx_data_virt[i] >> 8) & 0xff),
                 2 * i + 0
@@ -160,7 +160,7 @@ std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {
             }
         }
     } else {
-        for (size_t i=0; i < _n_samples; ++i) {
+        for (int i=0; i < _n_samples; ++i) {
             for (int ch = 0; ch < _n_channels; ++ch) {
                 if (!_active_channels[ch]) {
                     continue;

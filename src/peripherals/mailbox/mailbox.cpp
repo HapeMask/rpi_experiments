@@ -40,7 +40,7 @@ MemPtrs Mailbox::alloc_vc_mem(uint32_t size, uint32_t alignment) const {
     auto lock_msg = MboxMessage<LockMemPtrs>{.tags={LockMemPtrs{.req_handle=vc_mem_handle}}};
     xfer(lock_msg);
 
-    void* bus_addr = (void*)std::get<0>(lock_msg.tags).resp_bus_addr;
+    void* bus_addr = (void*)(uintptr_t)std::get<0>(lock_msg.tags).resp_bus_addr;
     if (bus_addr == 0) {
         throw std::runtime_error("Failed to lock VC memory.");
     }
