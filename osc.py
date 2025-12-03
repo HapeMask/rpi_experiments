@@ -350,7 +350,7 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(0.0, 5.23), n_samples=4096)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=4096)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)
