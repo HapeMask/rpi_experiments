@@ -99,9 +99,6 @@ class Oscilloscope(QApplication):
 
         self.view_box = CustomViewBox()
         self.graph = pg.PlotWidget(viewBox=self.view_box)
-        self.x = np.linspace(0, self.update_interval_sec, self.adc.n_samples)
-        self.y = np.zeros((self.adc.n_samples,), np.float32)
-        self.osc_line = self.graph.plot(self.x, self.y, pen=pg.mkPen("g", width=1))
         self.graph.showGrid(x=True, y=True)
 
         #self.graph.getPlotItem().addItem(
@@ -150,6 +147,15 @@ class Oscilloscope(QApplication):
             lambda idx: self.set_sample_rate(self.sample_rate_input.itemData(idx))
         )
 
+        self.sample_buffer_input = QComboBox()
+        for size_exp in range(9, 15):
+            size = int(2 ** size_exp)
+            self.sample_buffer_input.addItem(str(size), size)
+        self.sample_buffer_input.setEditable(False)
+        self.sample_buffer_input.currentIndexChanged.connect(
+            lambda idx: self.resize_sample_buffer(self.sample_buffer_input.itemData(idx))
+        )
+
         channel_hbox = QHBoxLayout()
         self.channel_toggles = []
         for ch_idx in range(n_channels):
@@ -164,6 +170,8 @@ class Oscilloscope(QApplication):
         right_box.addWidget(QLabel("Sample Rate"))
         right_box.addWidget(self.sample_rate_input)
         right_box.addLayout(channel_hbox)
+        right_box.addWidget(QLabel("Sample Buffer"))
+        right_box.addWidget(self.sample_buffer_input)
         right_box.addStretch(1)
         right_box.addWidget(trig_gbox)
 
@@ -232,7 +240,21 @@ class Oscilloscope(QApplication):
         self.set_sample_rate(SMI_HZ)
         self.toggle_channel(0)
         self.channel_toggles[0].setChecked(True)
+
+        self.sample_buffer_input.setCurrentIndex(
+            self.sample_buffer_input.findData(adc.n_samples)
+        )
+        self.resize_sample_buffer(adc.n_samples)
+
         self.reset_graph_range()
+
+    def resize_sample_buffer(self, n_samples):
+        self.adc.resize(n_samples)
+        self.graph.clear()
+
+        self.x = np.linspace(0, self.update_interval_sec, self.adc.n_samples)
+        self.y = np.zeros((self.adc.n_samples,), np.float32)
+        self.osc_line = self.graph.plot(self.x, self.y, pen=pg.mkPen("g", width=1))
 
     def set_sample_rate(self, sample_rate):
         self.adc_sample_rate = self.adc.start_sampling(sample_rate)
@@ -350,7 +372,7 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=4096)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=1024)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)

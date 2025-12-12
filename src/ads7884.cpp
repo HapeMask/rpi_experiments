@@ -39,7 +39,8 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
         .def("start_sampling", &ParallelADC::start_sampling)
         .def("stop_sampling", &ParallelADC::stop_sampling)
         .def("toggle_channel", &ParallelADC::toggle_channel)
-        .def("n_active_channels", &ParallelADC::n_active_channels);
+        .def("n_active_channels", &ParallelADC::n_active_channels)
+        .def("resize", &ParallelADC::resize);
 
     m.def(
         "get_spi_flag_bits",

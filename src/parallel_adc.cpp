@@ -8,8 +8,13 @@
 
 
 ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_channels) :
-    _VREF(vref)
+    _VREF(vref),
+    _n_channels(n_channels)
 {
+    if (n_channels < 1 || n_channels > 2) {
+        throw std::runtime_error("Only 1 or 2 channels are supported.");
+    }
+
     // Clock
     _gpio.set_mode(6, GPIOMode::ALT_1);
 
@@ -25,31 +30,40 @@ ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_chan
 
     // TODO: Add the remaining 8 lines when we have 2 channels for real.
 
-    resize(n_samples, n_channels);
+    _active_channels.resize(n_channels);
+    for (int ch=0; ch < n_channels; ++ch) {
+        _active_channels[ch] = false;
+    }
+
+    resize(n_samples);
 }
 
 ParallelADC::~ParallelADC() {
+    _dma._mbox.free_vc_mem(_data);
+    _data.vc_handle = 0;
+    _data.virt = nullptr;
+    _data.phys = nullptr;
+    _data.bus = nullptr;
 }
 
-void ParallelADC::resize(int n_samples, int n_channels) {
-    if (n_channels < 0 || n_channels > 2) {
-        throw std::runtime_error("Only 1 or 2 channels are supported.");
+void ParallelADC::resize(int n_samples) {
+    if (n_samples == _n_samples) {
+        return;
     }
 
     _n_samples = n_samples;
-    _n_channels = n_channels;
 
-    _sample_bufs.resize(n_channels);
-    for (int ch=0; ch < n_channels; ++ch) {
+    _sample_bufs.resize(_n_channels);
+    for (int ch=0; ch < _n_channels; ++ch) {
         _sample_bufs[ch].resize(n_samples);
 
         for (int i=0; i < n_samples; ++i) {
             _sample_bufs[ch][i] = {i, 0.f};
         }
     }
-    _active_channels.resize(n_channels);
-    for (int ch=0; ch < n_channels; ++ch) {
-        _active_channels[ch] = false;
+
+    if (_data.virt != nullptr) {
+        _dma._mbox.free_vc_mem(_data);
     }
 
     _data = _dma._mbox.alloc_vc_mem(n_samples * sizeof(uint16_t), _asi.page_size);

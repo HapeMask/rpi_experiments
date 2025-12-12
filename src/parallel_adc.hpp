@@ -19,7 +19,7 @@ class ParallelADC {
         uint32_t start_sampling(uint32_t sample_rate_hz);
         void toggle_channel(int channel_idx);
         void stop_sampling();
-        void resize(int n_samples, int n_channels);
+        void resize(int n_samples);
 
         std::vector<std::vector<std::tuple<float, float>>> get_buffers();
         std::pair<float, float> VREF() const { return _VREF; }
