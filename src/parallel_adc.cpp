@@ -77,6 +77,15 @@ void ParallelADC::_setup_dma_cbs() {
         (_n_samples * sizeof(uint16_t))
     );
 
+    // If only one channel is active (and thus 2 8-bit samples are packed into
+    // each 16-bit element), we have to make sure DMA reads an even number of
+    // bytes. This is because SMI will pack the last sample into the upper 8
+    // bits of the last 16-bit element. If DMA only reads the requested
+    // number of bytes, it will miss the last sample.
+    if (_highest_active_channel() == 0) {
+        bytes_to_xfer += (bytes_to_xfer % 2);
+    }
+
     if (bytes_to_xfer > 65536) {
         throw std::runtime_error(
             "Requested too many samples for a single DMA transaction. Max: 65535 bytes."
@@ -152,7 +161,12 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
     std::string trig_mode,
     int skip_samples
 ) {
-    if (n_active_channels() == 0) {
+    // Safety check for skip_samples
+    if (skip_samples < 0) {
+        skip_samples = 0;
+    }
+
+    if (skip_samples >= _n_samples || n_active_channels() == 0) {
         return {_sample_bufs, false, std::nullopt};
     }
 
@@ -198,14 +212,6 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
 
     // Only check channel 0 for now.
     int ch = 0;
-
-    // Safety check for skip_samples
-    if (skip_samples < 0) {
-        skip_samples = 0;
-    }
-    if (skip_samples >= _n_samples) {
-        return {_sample_bufs, false, std::nullopt};
-    }
 
     float low = low_thresh;
     float high = high_thresh;

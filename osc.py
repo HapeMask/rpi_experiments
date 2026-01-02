@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QVBoxLayout,
     QWidget,
-    QLayout,
 )
 from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QTimer
@@ -26,8 +25,8 @@ from ads7884 import ParallelADC
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
-SMI_HZ = 5000000
-AVAILABLE_SAMPLE_RATES_MSPS = [1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]
+AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
+AVAILABLE_BUFFER_SIZES = [int(2 ** size_exp) for size_exp in range(9, 16)]
 
 
 def sample_rate_to_msps_str(sample_rate):
@@ -74,7 +73,7 @@ def set_icon_css(widget, icon_path, size):
 
 
 class Oscilloscope(QApplication):
-    def __init__(self, argv, adc, update_fps=30, n_channels=2):
+    def __init__(self, argv, adc, update_fps=30, n_channels=2, init_sample_rate=int(5e6)):
         super().__init__(argv)
 
         self.adc = adc
@@ -143,8 +142,7 @@ class Oscilloscope(QApplication):
         trig_gbox_layout.addWidget(trig_auto_checkbox, 1, 1)
 
         self.sample_rate_input = QComboBox()
-        for rate in AVAILABLE_SAMPLE_RATES_MSPS:
-            rate = int(rate * 1e6)
+        for rate in AVAILABLE_SAMPLE_RATES:
             self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
         self.sample_rate_input.setEditable(False)
         self.sample_rate_input.currentIndexChanged.connect(
@@ -152,8 +150,7 @@ class Oscilloscope(QApplication):
         )
 
         self.sample_buffer_input = QComboBox()
-        for size_exp in range(9, 15):
-            size = int(2 ** size_exp)
+        for size in AVAILABLE_BUFFER_SIZES:
             self.sample_buffer_input.addItem(str(size), size)
         self.sample_buffer_input.setEditable(False)
         self.sample_buffer_input.currentIndexChanged.connect(
@@ -242,13 +239,9 @@ class Oscilloscope(QApplication):
         central_widget.setLayout(layout)
         self.window.setCentralWidget(central_widget)
 
-        self.set_sample_rate(SMI_HZ)
-        self.toggle_channel(0)
+        self.set_sample_rate(init_sample_rate)
         self.channel_toggles[0].setChecked(True)
-
-        self.sample_buffer_input.setCurrentIndex(
-            self.sample_buffer_input.findData(adc.n_samples)
-        )
+        self.toggle_channel(0)
         self.resize_sample_buffer(adc.n_samples)
 
         self.reset_graph_range()
@@ -275,6 +268,10 @@ class Oscilloscope(QApplication):
         self.setProperty("darkMode", darkMode)
 
     def resize_sample_buffer(self, n_samples):
+        buffer_size_idx = self.sample_buffer_input.findData(n_samples)
+        if buffer_size_idx < 0:
+            raise KeyError(f"Sample count {n_samples} not found in dropdown.")
+
         self.adc.resize(n_samples)
         self.graph.clear()
 
@@ -282,12 +279,19 @@ class Oscilloscope(QApplication):
         self.y = np.zeros((self.adc.n_samples,), np.float32)
         self.osc_line = self.graph.plot(self.x, self.y, pen=pg.mkPen("g", width=1))
 
+        self.sample_buffer_input.blockSignals(True)
+        self.sample_buffer_input.setCurrentIndex(buffer_size_idx)
+        self.sample_buffer_input.blockSignals(False)
+
     def set_sample_rate(self, sample_rate):
-        self.adc_sample_rate = self.adc.start_sampling(sample_rate)
+        if sample_rate not in AVAILABLE_SAMPLE_RATES:
+            raise ValueError(f"Requested sample rate not available: {sample_rate}")
 
         sample_rate_idx = self.sample_rate_input.findData(sample_rate)
         if sample_rate_idx < 0:
             raise KeyError(f"Sample rate {sample_rate} not found in dropdown.")
+
+        self.adc_sample_rate = self.adc.start_sampling(sample_rate)
 
         self.sample_rate_input.blockSignals(True)
         self.sample_rate_input.setCurrentIndex(sample_rate_idx)
@@ -301,22 +305,57 @@ class Oscilloscope(QApplication):
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
 
-        # 50MS/s is only available in single-channel mode for now (due to
-        # memory bandwidth limitations?). If we have more than 1 channel
-        # active, remove it and switch to 25MS/s if it was selected. Otherwise
-        # add it back in.
-        idx_50msps = self.sample_rate_input.findData(50000000)
-
+        # >=50MS/s is only available in single-channel mode (only Ch. 0 active)
+        # for now due to memory bandwidth limitations. If we have more than 1
+        # channel active, remove all higher sample rates and switch to 20MS/s
+        # if one was selected. Similar to the above logic, if we are in
+        # single-channel mode we can support up to 32768 samples. Otherwise, at
+        # most 16384.
         n_active_channels = self.adc.n_active_channels()
         ch0_active = self.channel_toggles[0].isChecked()
+        is_single_channel_mode = (n_active_channels == 1 and ch0_active)
 
-        if (n_active_channels == 1 and ch0_active and idx_50msps < 0):
-            self.sample_rate_input.addItem(sample_rate_to_msps_str(50000000), 50000000)
-        elif (n_active_channels > 1 and idx_50msps >= 0):
-            # If we removed 50MS/s and it was selected, drop down to 25MS/s.
-            if self.adc_sample_rate == 50000000:
-                self.set_sample_rate(25000000)
-            self.sample_rate_input.removeItem(idx_50msps)
+        sample_rates = AVAILABLE_SAMPLE_RATES
+        buffer_sizes = AVAILABLE_BUFFER_SIZES
+
+        if is_single_channel_mode:
+            # Add back any previously-removed options.
+            self.sample_rate_input.blockSignals(True)
+            self.sample_buffer_input.blockSignals(True)
+
+            for rate in sample_rates:
+                if self.sample_rate_input.findData(rate) < 0:
+                    self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
+
+            for size in buffer_sizes:
+                if self.sample_buffer_input.findData(size) < 0:
+                    self.sample_buffer_input.addItem(str(size), size)
+
+            self.sample_rate_input.blockSignals(False)
+            self.sample_buffer_input.blockSignals(False)
+        else:
+            self.sample_rate_input.blockSignals(True)
+            self.sample_buffer_input.blockSignals(True)
+
+            for idx in range(self.sample_rate_input.count() - 1, -1, -1):
+                if self.sample_rate_input.itemData(idx) >= int(50e6):
+                    self.sample_rate_input.removeItem(idx)
+
+            for idx in range(self.sample_buffer_input.count() - 1, -1, -1):
+                if self.sample_buffer_input.itemData(idx) >= 32768:
+                    self.sample_buffer_input.removeItem(idx)
+
+            self.sample_rate_input.blockSignals(False)
+            self.sample_buffer_input.blockSignals(False)
+
+            # If we were sampling at >=50MS/s, drop down to 20Ms/s.
+            if self.adc_sample_rate >= int(50e6):
+                self.set_sample_rate(int(20e6))
+
+            # If we had a buffer size larger than the limit, pick the new
+            # largest allowed.
+            if self.adc.n_samples > 16384:
+                self.resize_sample_buffer(16384)
 
     def toggle_paused(self):
         self.paused = not self.paused
@@ -368,7 +407,7 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=1024)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=32768)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)
