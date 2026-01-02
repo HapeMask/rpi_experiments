@@ -4,4 +4,4 @@
 # cpu3.  Run the python code on cpu2 s.t. we can set affinity 3 on the ADC
 # sampler thread and give it maximum priority.
 
-sudo -E taskset -c 2 python3 osc.py
+QT_LOGGING_RULES="*.debug=false" sudo -E taskset -c 2 python3 osc.py

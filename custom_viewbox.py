@@ -1,4 +1,5 @@
-from PyQt5 import QtCore
+from PyQt6 import QtCore
+from PyQt6.QtWidgets import QMainWindow
 import pyqtgraph as pg
 import numpy as np
 
@@ -48,3 +49,24 @@ class CustomViewBox(pg.ViewBox):
                 self.updateScaleBox(event.buttonDownPos(), event.pos())
         else:
             assert False, self.mode
+
+
+class MinSizeMainWindow(QMainWindow):
+    def __init__(self, *args, minimum_size, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.minimum_size = minimum_size
+        self.setMinimumSize(*minimum_size)
+
+    def resizeEvent(self, event):
+        if (
+            event.size().width() < self.minimum_size[0] or
+            event.size().height() < self.minimum_size[1]
+        ):
+            new_size = QtCore.QSize(
+                max(event.size().width(), self.minimum_size[0]),
+                max(event.size().height(), self.minimum_size[1]),
+            )
+            self.resize(new_size)
+        else:
+            return super().resizeEvent(event)

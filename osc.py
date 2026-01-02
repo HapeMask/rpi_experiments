@@ -3,24 +3,27 @@ import os
 import sys
 
 import numpy as np
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QComboBox,
     QLabel,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
     QWidget,
+    QLayout,
 )
-from PyQt5.QtCore import QTimer
+from PyQt6 import QtCore, QtGui
+from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
+
 from ads7884 import ParallelADC
-from custom_viewbox import CustomViewBox
+from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
 SMI_HZ = 5000000
@@ -80,10 +83,24 @@ class Oscilloscope(QApplication):
 
         self.update_interval_sec = 1 / update_fps
 
-        self.window = QWidget()
+        # Taken from PyQtGraph mkQApp.
+        # Determines if dark mode is active on startup. Also connects event
+        # handlers to keep dark mode status in sync with the OS.
+        try:
+            # This only works in Qt 6.5+
+            darkMode = self.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+            self.styleHints().colorSchemeChanged.connect(self._onColorSchemeChange)
+        except AttributeError:
+            palette = self.palette()
+            windowTextLightness = palette.color(QtGui.QPalette.ColorRole.WindowText).lightness()
+            windowLightness = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
+            darkMode = windowTextLightness > windowLightness
+            self.paletteChanged.connect(self._onPaletteChange)
+        self.setProperty("darkMode", darkMode)
+
+        self.window = MinSizeMainWindow(minimum_size=(700, 375))
         self.window.setWindowTitle("Oscilloscope")
-        self.window.setGeometry(100, 100, 700, 300)
-        layout = QHBoxLayout(self.window)
+        layout = QHBoxLayout()
 
         self.view_box = CustomViewBox()
         self.graph = pg.PlotWidget(viewBox=self.view_box)
@@ -203,9 +220,6 @@ class Oscilloscope(QApplication):
         layout.addWidget(self.graph)
         layout.addLayout(right_box)
 
-        self.window.setLayout(layout)
-        self.window.show()
-
         self.pause_button = pause_button
         self.trig_oneshot_button = trig_oneshot_button
         self.trig_bgrp = trig_bgrp
@@ -224,6 +238,10 @@ class Oscilloscope(QApplication):
         self.trig_mode = "rising_edge"
         self.paused = False
 
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+        self.window.setCentralWidget(central_widget)
+
         self.set_sample_rate(SMI_HZ)
         self.toggle_channel(0)
         self.channel_toggles[0].setChecked(True)
@@ -234,6 +252,27 @@ class Oscilloscope(QApplication):
         self.resize_sample_buffer(adc.n_samples)
 
         self.reset_graph_range()
+
+        self.window.move(100, 100)
+        self.window.show()
+
+    def _onColorSchemeChange(self, colorScheme):
+        # Attempt to keep darkMode attribute up to date
+        # QEvent.Type.PaletteChanged/ApplicationPaletteChanged will be emitted before
+        # QStyleHint().colorSchemeChanged.emit()!
+        # Uses Qt 6.5+ API
+        darkMode = colorScheme == QtCore.Qt.ColorScheme.Dark
+        self.setProperty("darkMode", darkMode)
+
+    def _onPaletteChange(self, palette):
+        # Attempt to keep darkMode attribute up to date
+        # QEvent.Type.PaletteChanged/ApplicationPaletteChanged will be emitted after
+        # paletteChanged.emit()!
+        # Using API deprecated in Qt 6.0
+        windowTextLightness = palette.color(QtGui.QPalette.ColorRole.WindowText).lightness()
+        windowLightness = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
+        darkMode = windowTextLightness > windowLightness
+        self.setProperty("darkMode", darkMode)
 
     def resize_sample_buffer(self, n_samples):
         self.adc.resize(n_samples)
@@ -261,8 +300,6 @@ class Oscilloscope(QApplication):
 
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
-
-        toggle_btn = self.channel_toggles[channel_idx]
 
         # 50MS/s is only available in single-channel mode for now (due to
         # memory bandwidth limitations?). If we have more than 1 channel
@@ -331,13 +368,13 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=1024)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)
 
     print("Starting app...")
-    ret = app.exec_()
+    ret = app.exec()
 
     app.adc.stop_sampling()
     sys.exit(ret)
