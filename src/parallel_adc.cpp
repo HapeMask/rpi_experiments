@@ -53,7 +53,10 @@ void ParallelADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
-    _sample_bufs.resize({_n_channels, _n_samples, 2});
+    _sample_bufs = py::array_t<float>(
+        {_n_channels, _n_samples, 2},
+        {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+    );
     _sample_bufs[py::ellipsis()] = 0.f;
 
     if (_data.virt != nullptr) {
