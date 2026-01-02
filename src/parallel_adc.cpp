@@ -162,7 +162,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
     // samples, swapped because SMI things (see doc PDF re:XRGB).
     auto sbuf = _sample_bufs.mutable_unchecked<3>();
     if (_highest_active_channel() == 0) {
-        for (int i=0; i < _n_samples / 2; ++i) {
+        for (int i=0; i < (_n_samples + 1) / 2; ++i) {
             sbuf(0, 2 * i + 0, 0) = _sample_to_float((_rx_data_virt[i] >> 8) & 0xff);
             sbuf(0, 2 * i + 0, 1) = 2 * i + 0;
 
