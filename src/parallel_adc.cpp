@@ -142,9 +142,15 @@ float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
 }
 
-py::array_t<float> ParallelADC::get_buffers() {
+std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffers(
+    bool auto_trig,
+    float low_thresh,
+    float high_thresh,
+    std::string trig_mode,
+    int skip_samples
+) {
     if (n_active_channels() == 0) {
-        return _sample_bufs;
+        return {_sample_bufs, false, std::nullopt};
     }
 
     _smi.start_xfer(_n_samples, /*packed=*/true);
@@ -179,5 +185,66 @@ py::array_t<float> ParallelADC::get_buffers() {
         }
     }
 
-    return _sample_bufs;
+    // Trigger logic
+    bool triggered = false;
+    std::optional<int> trig_start = std::nullopt;
+
+    if (trig_mode == "none") {
+         return {_sample_bufs, false, std::nullopt};
+    }
+
+    // Only check channel 0 for now.
+    int ch = 0;
+
+    // Safety check for skip_samples
+    if (skip_samples < 0) {
+        skip_samples = 0;
+    }
+    if (skip_samples >= _n_samples) {
+        return {_sample_bufs, false, std::nullopt};
+    }
+
+    float low = low_thresh;
+    float high = high_thresh;
+
+    if (auto_trig) {
+         // Calculate min/max from valid range
+         float min_val = sbuf(ch, skip_samples, 0);
+         float max_val = min_val;
+         for (int i = skip_samples + 1; i < _n_samples; ++i) {
+             const float v = sbuf(ch, i, 0);
+             if (v < min_val) min_val = v;
+             if (v > max_val) max_val = v;
+         }
+
+         const float range = max_val - min_val;
+         low = min_val + 0.2f * range;
+         high = min_val + 0.8f * range;
+    }
+
+    if (trig_mode == "rising_edge") {
+        for (int i = skip_samples; i < _n_samples; ++i) {
+            const float v = sbuf(ch, i, 0);
+            if (v <= low) {
+                trig_start = i;
+            }
+            if (v >= high && trig_start.has_value()) {
+                triggered = true;
+                break;
+            }
+        }
+    } else if (trig_mode == "falling_edge") {
+        for (int i = skip_samples; i < _n_samples; ++i) {
+            const float v = sbuf(ch, i, 0);
+            if (v >= high) {
+                trig_start = i;
+            }
+            if (v <= low && trig_start.has_value()) {
+                triggered = true;
+                break;
+            }
+        }
+    }
+
+    return {_sample_bufs, triggered, trig_start};
 }

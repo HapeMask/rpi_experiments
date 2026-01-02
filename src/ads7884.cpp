@@ -35,7 +35,13 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
         )
         .def_property("VREF", &ParallelADC::VREF, nullptr)
         .def_property("n_samples", &ParallelADC::n_samples, nullptr)
-        .def("get_buffers", &ParallelADC::get_buffers)
+        .def("get_buffers", &ParallelADC::get_buffers,
+             py::arg("auto_trig")=false,
+             py::arg("low_thresh")=0.5f,
+             py::arg("high_thresh")=2.5f,
+             py::arg("trig_mode")="rising_edge",
+             py::arg("skip_samples")=0
+        )
         .def("start_sampling", &ParallelADC::start_sampling)
         .def("stop_sampling", &ParallelADC::stop_sampling)
         .def("toggle_channel", &ParallelADC::toggle_channel)

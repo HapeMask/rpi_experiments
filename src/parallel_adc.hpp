@@ -3,6 +3,9 @@
 #include <thread>
 #include <semaphore>
 
+#include <string>
+#include <tuple>
+#include <optional>
 #include <utility>
 
 #include "peripherals/clock/clock.hpp"
@@ -25,7 +28,13 @@ class ParallelADC {
         void stop_sampling();
         void resize(int n_samples);
 
-        py::array_t<float> get_buffers();
+        std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
+            bool auto_trig=false,
+            float low_thresh=0.5,
+            float high_thresh=2.5,
+            std::string trig_mode="rising_edge",
+            int skip_samples=0
+        );
         std::pair<float, float> VREF() const { return _VREF; }
         int n_samples() const { return _n_samples; }
         int n_active_channels() const;

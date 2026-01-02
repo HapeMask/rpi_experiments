@@ -286,54 +286,30 @@ class Oscilloscope(QApplication):
         self.pause_button.setChecked(self.paused)
 
     def sample_osc(self):
-        buffers = self.adc.get_buffers()
-
         # TODO: Hack. Things get less reliable for early samples at high sample rates.
         sample_cut_idx = int(10e-6 * self.adc_sample_rate)
+
+        buffers, triggered, trig_start = self.adc.get_buffers(
+            auto_trig=self.trig_auto_checkbox.isChecked(),
+            low_thresh=0.5,
+            high_thresh=2.5,
+            trig_mode=self.trig_mode,
+            skip_samples=sample_cut_idx,
+        )
+
         buffers = buffers[:, sample_cut_idx:]
 
         # shape: [n_ch, n_samples, 2]
         samples, timestamps = buffers[..., 0], buffers[..., 1]
 
-        timestamps = timestamps.astype(np.float32) / self.adc_sample_rate
+        timestamps = timestamps / self.adc_sample_rate
 
-        # TODO: For now assume we only have one channel...
+        # TODO: For now assume we only have one channel.
         samples = samples[0]
         timestamps = timestamps[0]
 
-        if self.trig_auto_checkbox.isChecked():
-            samp_min = samples.min()
-            samp_max = samples.max()
-            sample_range = samp_max - samp_min
-            low = samp_min + 0.2 * sample_range
-            high = samp_min + 0.8 * sample_range
-        else:
-            low, high = (0.5, 2.5)
-
-        # TODO: Move triggering into C++ code?
-        trig_start = None
-        triggered = False
-
-        # TODO: Per-channel trigger modes?
-        if self.trig_mode == "rising_edge":
-            for i, v in enumerate(samples):
-                if v <= low:
-                    trig_start = i
-
-                if v >= high and trig_start is not None:
-                    triggered = True
-                    break
-        elif self.trig_mode == "falling_edge":
-            for i, v in enumerate(samples):
-                if v >= high:
-                    trig_start = i
-
-                if v <= low and trig_start is not None:
-                    triggered = True
-                    break
-
-        if triggered:
-            timestamps -= timestamps[trig_start]
+        if triggered and trig_start is not None:
+            timestamps -= float(trig_start) / self.adc_sample_rate
 
         return samples, timestamps, triggered
 
@@ -355,7 +331,7 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=1024)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)
