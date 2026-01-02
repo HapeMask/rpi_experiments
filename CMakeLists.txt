@@ -20,6 +20,7 @@ set_property(TARGET serial_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_library(parallel_adc STATIC src/parallel_adc.cpp)
 target_link_libraries(parallel_adc clock dma gpio smi)
+target_include_directories(parallel_adc PRIVATE "${pybind11_INCLUDE_DIRS}")
 set_property(TARGET parallel_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 add_executable(gpio_pwm src/gpio_pwm.cpp)

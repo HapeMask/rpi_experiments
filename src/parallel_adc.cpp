@@ -53,14 +53,8 @@ void ParallelADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
-    _sample_bufs.resize(_n_channels);
-    for (int ch=0; ch < _n_channels; ++ch) {
-        _sample_bufs[ch].resize(n_samples);
-
-        for (int i=0; i < n_samples; ++i) {
-            _sample_bufs[ch][i] = {i, 0.f};
-        }
-    }
+    _sample_bufs.resize({_n_channels, _n_samples, 2});
+    _sample_bufs[py::ellipsis()] = 0.f;
 
     if (_data.virt != nullptr) {
         _dma._mbox.free_vc_mem(_data);
@@ -148,9 +142,9 @@ float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
 }
 
-std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {
+py::array_t<float> ParallelADC::get_buffers() {
     if (n_active_channels() == 0) {
-        return {{{}}};
+        return _sample_bufs;
     }
 
     _smi.start_xfer(_n_samples, /*packed=*/true);
@@ -160,17 +154,15 @@ std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {
 
     // If only the first channel is active, each uint16_t contains two packed
     // samples, swapped because SMI things (see doc PDF re:XRGB).
+    auto sbuf = _sample_bufs.mutable_unchecked<3>();
     if (_highest_active_channel() == 0) {
         for (int i=0; i < _n_samples / 2; ++i) {
-            _sample_bufs[0][2 * i + 0] = {
-                _sample_to_float((_rx_data_virt[i] >> 8) & 0xff),
-                2 * i + 0
-            };
+            sbuf(0, 2 * i + 0, 0) = _sample_to_float((_rx_data_virt[i] >> 8) & 0xff);
+            sbuf(0, 2 * i + 0, 1) = 2 * i + 0;
+
             if ((2 * i + 1) < _n_samples) {
-                _sample_bufs[0][2 * i + 1] = {
-                    _sample_to_float((_rx_data_virt[i] >> 0) & 0xff),
-                    2 * i + 1
-                };
+                sbuf(0, 2 * i + 1, 0) = _sample_to_float((_rx_data_virt[i] >> 0) & 0xff);
+                sbuf(0, 2 * i + 1, 1) = 2 * i + 1;
             }
         }
     } else {
@@ -179,12 +171,10 @@ std::vector<std::vector<std::tuple<float, float>>> ParallelADC::get_buffers() {
                 if (!_active_channels[ch]) {
                     continue;
                 }
-
                 const uint32_t shift = 8 * ch;
-                _sample_bufs[ch][i] = {
-                    _sample_to_float((_rx_data_virt[i] >> shift) & 0xff),
-                    i
-                };
+
+                sbuf(ch, i, 0) = _sample_to_float((_rx_data_virt[i] >> shift) & 0xff);
+                sbuf(ch, i, 1) = i;
             }
         }
     }

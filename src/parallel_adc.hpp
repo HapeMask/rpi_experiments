@@ -11,6 +11,10 @@
 #include "peripherals/smi/smi.hpp"
 #include "utils/reg_mem_utils.hpp"
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+namespace py = pybind11;
+
 class ParallelADC {
     public:
         ParallelADC(std::pair<float, float> vref, int n_samples=16384, int n_channels=2);
@@ -21,7 +25,7 @@ class ParallelADC {
         void stop_sampling();
         void resize(int n_samples);
 
-        std::vector<std::vector<std::tuple<float, float>>> get_buffers();
+        py::array_t<float> get_buffers();
         std::pair<float, float> VREF() const { return _VREF; }
         int n_samples() const { return _n_samples; }
         int n_active_channels() const;
@@ -35,7 +39,7 @@ class ParallelADC {
         float _sample_to_float(uint8_t raw_sample) const;
 
         std::vector<bool> _active_channels;
-        std::vector<std::vector<std::tuple<float, float>>> _sample_bufs;
+        py::array_t<float> _sample_bufs;
         int _highest_active_channel() const;
 
         void _setup_dma_cbs();

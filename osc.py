@@ -286,24 +286,20 @@ class Oscilloscope(QApplication):
         self.pause_button.setChecked(self.paused)
 
     def sample_osc(self):
-        samples = self.adc.get_buffers()
+        buffers = self.adc.get_buffers()
+
+        # TODO: Hack. Things get less reliable for early samples at high sample rates.
+        sample_cut_idx = int(10e-6 * self.adc_sample_rate)
+        buffers = buffers[:, sample_cut_idx:]
 
         # shape: [n_ch, n_samples, 2]
-        samples = np.asarray(samples)
-        samples, timestamps = samples[..., 0], samples[..., 1]
+        samples, timestamps = buffers[..., 0], buffers[..., 1]
 
-        # TODO: Hack. Things get less reliable for the first many samples at high sample rates.
-        sample_cut_idx = int(15e-6 * self.adc_sample_rate)
-        samples = samples[:, sample_cut_idx:]
-        timestamps = timestamps[:, sample_cut_idx:]
+        timestamps = timestamps.astype(np.float32) / self.adc_sample_rate
 
         # TODO: For now assume we only have one channel...
         samples = samples[0]
         timestamps = timestamps[0]
-
-        # TODO: Hack.
-        #timestamps = cal_scales[SPI_HZ] * timestamps.astype(np.float32) / self.adc_sample_rate
-        timestamps = timestamps.astype(np.float32) / self.adc_sample_rate
 
         if self.trig_auto_checkbox.isChecked():
             samp_min = samples.min()
