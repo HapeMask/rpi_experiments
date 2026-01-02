@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    #QSpinBox,
     QComboBox,
     QLabel,
     QPushButton,
@@ -25,18 +24,7 @@ from custom_viewbox import CustomViewBox
 
 
 SMI_HZ = 5000000
-SPI_HZ = 31000000
-cal_scales = {
-    4000000:  1.045,
-    8000000:  1.045,
-    16000000: 1.115,
-    20000000: 1.045,
-    24000000: 1.045,
-    28000000: 1.115,
-    30000000: 1.045,
-    31000000: 1.000,
-    32000000: 1.115,
-}
+AVAILABLE_SAMPLE_RATES_MSPS = [1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]
 
 
 def sample_rate_to_msps_str(sample_rate):
@@ -137,11 +125,10 @@ class Oscilloscope(QApplication):
         trig_gbox_layout.addWidget(trig_none_radio, 1, 0)
         trig_gbox_layout.addWidget(trig_auto_checkbox, 1, 1)
 
-        #self.sample_rate_input = QSpinBox()
         self.sample_rate_input = QComboBox()
-        for rate in range(int(1e6), int(50e6) + 1, 10000):
-            if (int(500e6) % rate) == 0:
-                self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
+        for rate in AVAILABLE_SAMPLE_RATES_MSPS:
+            rate = int(rate * 1e6)
+            self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
         self.sample_rate_input.setEditable(False)
         self.sample_rate_input.currentIndexChanged.connect(
             lambda idx: self.set_sample_rate(self.sample_rate_input.itemData(idx))
