@@ -155,7 +155,7 @@ float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
 }
 
 std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffers(
-    bool auto_trig,
+    bool auto_range,
     float low_thresh,
     float high_thresh,
     std::string trig_mode,
@@ -216,7 +216,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
     float low = low_thresh;
     float high = high_thresh;
 
-    if (auto_trig) {
+    if (auto_range) {
          // Calculate min/max from valid range
          float min_val = sbuf(ch, skip_samples, 0);
          float max_val = min_val;
@@ -234,7 +234,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
     if (trig_mode == "rising_edge") {
         for (int i = skip_samples; i < _n_samples; ++i) {
             const float v = sbuf(ch, i, 0);
-            if (v <= low) {
+            if (v < low) {
                 trig_start = i;
             }
             if (v >= high && trig_start.has_value()) {
@@ -245,7 +245,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ParallelADC::get_buffer
     } else if (trig_mode == "falling_edge") {
         for (int i = skip_samples; i < _n_samples; ++i) {
             const float v = sbuf(ch, i, 0);
-            if (v >= high) {
+            if (v > high) {
                 trig_start = i;
             }
             if (v <= low && trig_start.has_value()) {

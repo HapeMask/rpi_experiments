@@ -29,7 +29,7 @@ class ParallelADC {
         void resize(int n_samples);
 
         std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
-            bool auto_trig=false,
+            bool auto_range=false,
             float low_thresh=0.5,
             float high_thresh=2.5,
             std::string trig_mode="rising_edge",

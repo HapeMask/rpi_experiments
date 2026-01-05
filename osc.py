@@ -97,22 +97,13 @@ class Oscilloscope(QApplication):
             self.paletteChanged.connect(self._onPaletteChange)
         self.setProperty("darkMode", darkMode)
 
-        self.window = MinSizeMainWindow(minimum_size=(700, 375))
+        self.window = MinSizeMainWindow(minimum_size=(700, 400))
         self.window.setWindowTitle("Oscilloscope")
         layout = QHBoxLayout()
 
         self.view_box = CustomViewBox()
         self.graph = pg.PlotWidget(viewBox=self.view_box)
         self.graph.showGrid(x=True, y=True)
-
-        #self.graph.getPlotItem().addItem(
-        #    pg.InfiniteLine(
-        #        pos=1.5,
-        #        angle=0,
-        #        movable=True,
-        #        pen=pg.mkPen(width=2, color="r"),
-        #    )
-        #)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.plot_callback)
@@ -136,10 +127,14 @@ class Oscilloscope(QApplication):
         trig_bgrp.addButton(trig_falling_radio)
         trig_rising_radio.setChecked(True)
 
+        show_trig_line_checkbox = QCheckBox("Show Thresh.")
+        show_trig_line_checkbox.setChecked(True)
+
         trig_gbox_layout.addWidget(trig_rising_radio, 0, 0)
         trig_gbox_layout.addWidget(trig_falling_radio, 0, 1)
         trig_gbox_layout.addWidget(trig_none_radio, 1, 0)
         trig_gbox_layout.addWidget(trig_auto_checkbox, 1, 1)
+        trig_gbox_layout.addWidget(show_trig_line_checkbox, 2, 0, 1, 2)
 
         self.sample_rate_input = QComboBox()
         for rate in AVAILABLE_SAMPLE_RATES:
@@ -221,6 +216,10 @@ class Oscilloscope(QApplication):
         self.trig_oneshot_button = trig_oneshot_button
         self.trig_bgrp = trig_bgrp
         self.trig_auto_checkbox = trig_auto_checkbox
+        self.trig_auto_checkbox.stateChanged.connect(self.update_trig_line_visibility)
+
+        self.show_trig_line_checkbox = show_trig_line_checkbox
+        self.show_trig_line_checkbox.stateChanged.connect(self.update_trig_line_visibility)
 
         set_icon_css(trig_rising_radio, "resources/trig_rising.png", 64)
         set_icon_css(trig_falling_radio, "resources/trig_falling.png", 64)
@@ -232,7 +231,24 @@ class Oscilloscope(QApplication):
         set_icon_css(pan_radio, "resources/pan.png", 64)
         set_icon_css(zoom_radio, "resources/zoom.png", 64)
 
+        trig_line_color = "#FA234A"
+        self.trig_line = pg.InfiniteLine(
+            pos=2,
+            angle=0,
+            movable=True,
+            pen=pg.mkPen(width=2, color=trig_line_color, dash=[4, 4]),
+        )
+        self.trig_line_label = pg.InfLineLabel(
+            self.trig_line, "{value:0.2f}V", color=trig_line_color, position=0.1
+        )
+        self.trig_line_label.textItem.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.NoTextInteraction
+        )
+        self.trig_line_label.setAcceptHoverEvents(False)
+        self.trig_line_label.textItem.setAcceptHoverEvents(False)
+
         self.trig_mode = "rising_edge"
+        self.update_trig_line_visibility()
         self.paused = False
 
         central_widget = QWidget()
@@ -277,7 +293,11 @@ class Oscilloscope(QApplication):
 
         self.x = np.linspace(0, self.update_interval_sec, self.adc.n_samples)
         self.y = np.zeros((self.adc.n_samples,), np.float32)
-        self.osc_line = self.graph.plot(self.x, self.y, pen=pg.mkPen("g", width=1))
+        self.osc_line = self.graph.plot(
+            self.x, self.y, pen=pg.mkPen("#33ee66", width=1)
+        )
+
+        self.graph.getPlotItem().addItem(self.trig_line)
 
         self.sample_buffer_input.blockSignals(True)
         self.sample_buffer_input.setCurrentIndex(buffer_size_idx)
@@ -361,14 +381,34 @@ class Oscilloscope(QApplication):
         self.paused = not self.paused
         self.pause_button.setChecked(self.paused)
 
+    def update_trig_line_visibility(self):
+        # The trig_line should be visible when the auto trigger checkbox is
+        # not checked and the trigger mode is not "none"
+        visible = (
+            (not self.trig_auto_checkbox.isChecked())
+            and (self.trig_mode != "none")
+            and self.show_trig_line_checkbox.isChecked()
+        )
+        self.trig_line.setVisible(visible)
+
     def sample_osc(self):
         # TODO: Hack. Things get less reliable for early samples at high sample rates.
         sample_cut_idx = int(10e-6 * self.adc_sample_rate)
 
+        low_thresh = 0.5
+        high_thresh = 2.5
+        use_trig_line = (
+            (not self.trig_auto_checkbox.isChecked())
+            and (self.trig_mode != "none")
+        )
+        if use_trig_line:
+            low_thresh = self.trig_line.value()
+            high_thresh = self.trig_line.value()
+
         buffers, triggered, trig_start = self.adc.get_buffers(
-            auto_trig=self.trig_auto_checkbox.isChecked(),
-            low_thresh=0.5,
-            high_thresh=2.5,
+            auto_range=self.trig_auto_checkbox.isChecked(),
+            low_thresh=low_thresh,
+            high_thresh=high_thresh,
             trig_mode=self.trig_mode,
             skip_samples=sample_cut_idx,
         )
@@ -401,13 +441,14 @@ class Oscilloscope(QApplication):
 
     def trig_button_callback(self, button):
         self.trig_mode = button.mode
+        self.update_trig_line_visibility()
 
     def pan_zoom_callback(self, button):
         self.view_box.set_mode(button.mode)
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=32768)
+    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
 
     print("Setting up app...")
     app = Oscilloscope(sys.argv, adc)
