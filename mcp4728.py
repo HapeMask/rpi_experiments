@@ -10,6 +10,7 @@ INTERNAL_VREF: float = 2.048
 
 class MCP4728:
     def __init__(self, Vdd: float, address: int = 0x60) -> None:
+        """Interface for the MCP4728 quad 12-bit DAC connected via I2C."""
         self.Vdd: float = Vdd
         self.address = address
         self.bus = smbus.SMBus(1)
@@ -67,6 +68,8 @@ class MCP4728:
         v2: Optional[float] = None,
         v3: Optional[float] = None
     ) -> None:
+        """Sets the voltages for all channels. If a voltage for a channel is
+        not given, that channel will keep its current setting."""
         tgt_voltages: List[float] = [
             (v if v is not None else cur_v)
             for v, cur_v in zip([v0, v1, v2, v3], self.cur_voltages)
@@ -81,28 +84,3 @@ class MCP4728:
 
         self.bus.write_i2c_block_data(self.address, data[0], data[1:])
         self.cur_voltages = tgt_voltages
-
-if __name__ == "__main__":
-    import math
-    import time
-
-    mcp = MCP4728(Vdd=3.3)
-    f = 262
-    A = 3
-
-    dac_range = (0.0, 3.3)
-    out_range = (-3.3, 3.3)
-
-    start = time.time()
-    try:
-        while True:
-            t = time.time() - start
-            v = A * math.sin(2 * math.pi * t * f)
-            v = (v - out_range[0]) / (out_range[1] - out_range[0])
-            v = v * (dac_range[1] - dac_range[0]) + dac_range[0]
-            mcp.set_voltages(v)
-
-            if t > 100:
-                start = time.time()
-    except KeyboardInterrupt:
-        mcp.set_voltages(0)
