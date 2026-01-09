@@ -23,7 +23,7 @@ from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
 
-from ads7884 import ParallelADC, SerialADC, get_spi_flag_bits
+from adc_interfaces import ParallelADC, SerialADC, get_spi_flag_bits
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 

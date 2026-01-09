@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from ads7884 import get_spi_flag_bits, SerialADC
+from adc_interfaces import get_spi_flag_bits, SerialADC
 
 
 N = 100000

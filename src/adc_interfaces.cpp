@@ -10,8 +10,10 @@ namespace py = pybind11;
 #include "peripherals/spi/spi_defs.hpp"
 
 
-PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
-    m.doc() = "Module to read from the ADS7884 ADC via SPI.";
+PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
+    m.doc() = (
+        "Module to read from various ADCs (ADS7884, general 8-bit parallel ADCs) via SPI / SMI."
+    );
 
     py::class_<SerialADC>(m, "SerialADC")
         .def(
