@@ -5,6 +5,7 @@ namespace py = pybind11;
 
 #include "serial_adc.hpp"
 #include "parallel_adc.hpp"
+#include "peripherals/gpio/gpio.hpp"
 #include "peripherals/clock/clock.hpp"
 #include "peripherals/spi/spi_defs.hpp"
 
@@ -54,4 +55,24 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
         "Get flag bits for given flags.",
         "cs"_a=0, "clk_pha"_a=0, "clk_pol"_a=0
     );
+
+    py::class_<GPIO>(m, "GPIO")
+        .def(
+            py::init()
+        )
+        .def("set_pin", &GPIO::set_pin, py::arg("pin"))
+        .def("clear_pin", &GPIO::clear_pin, py::arg("pin"))
+        .def("get_level", &GPIO::get_level, py::arg("pin"))
+        .def("set_mode", &GPIO::set_mode, py::arg("pin"), py::arg("mode"));
+
+    py::enum_<GPIOMode>(m, "GPIOMode")
+        .value("IN", GPIOMode::IN)
+        .value("OUT", GPIOMode::OUT)
+        .value("ALT_0", GPIOMode::ALT_0)
+        .value("ALT_1", GPIOMode::ALT_1)
+        .value("ALT_2", GPIOMode::ALT_2)
+        .value("ALT_3", GPIOMode::ALT_3)
+        .value("ALT_4", GPIOMode::ALT_4)
+        .value("ALT_5", GPIOMode::ALT_5)
+        .export_values();
 }
