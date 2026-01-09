@@ -150,7 +150,7 @@ int ParallelADC::n_active_channels() const {
     return n_act;
 }
 
-float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
+float ParallelADC::_sample_to_float(uint32_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
 }
 

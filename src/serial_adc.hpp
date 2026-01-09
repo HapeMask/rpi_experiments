@@ -4,6 +4,10 @@
 #include <semaphore>
 #include <utility>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+namespace py = pybind11;
+
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
 #include "peripherals/spi/spi.hpp"
@@ -14,7 +18,6 @@
 class SerialADC {
     public:
         SerialADC(
-            int spi_speed,
             uint32_t spi_flag_bits,
             std::pair<float, float> vref,
             int n_samples=16384,
@@ -26,16 +29,28 @@ class SerialADC {
         void stop_sampling();
         void resize(int n_samples);
 
-        std::tuple<std::vector<float>, std::vector<float>> get_buffers();
+        std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
+            bool auto_range,
+            float low_thresh,
+            float high_thresh,
+            std::string trig_mode,
+            int skip_samples
+        );
+
         std::pair<float, float> VREF() const { return _VREF; }
-        int n_samples() const { return _sample_buf.size(); }
+        int n_samples() const { return _n_samples; }
+        int n_active_channels() const { return 1; }
+        void toggle_channel(int channel_idx) const {}
 
     protected:
-        float _timescale;
+        int _n_samples;
+        uint32_t _spi_flag_bits;
 
         void _run_dma();
         void _stop_dma();
         void _setup_dma_cbs();
+
+        float _sample_to_float(uint32_t raw_sample) const;
 
         MemPtrs _data;
         int _rx_block_size;
@@ -46,13 +61,13 @@ class SerialADC {
 
         const int _dma_chan_0 = 9;
         const int _dma_chan_1 = 10;
+        const int _n_channels = 1;
 
         GPIO _gpio;
         SPI _spi;
         DMA _dma;
         AddressSpaceInfo _asi;
 
-        std::vector<float> _sample_buf;
-        std::vector<float> _ts_buf;
+        py::array_t<float> _sample_bufs;
         std::pair<float, float> _VREF;
 };

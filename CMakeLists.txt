@@ -16,7 +16,9 @@ add_subdirectory(src/utils)
 
 add_library(serial_adc STATIC src/serial_adc.cpp)
 target_link_libraries(serial_adc clock dma gpio spi)
-set_property(TARGET serial_adc PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(serial_adc PRIVATE "${pybind11_INCLUDE_DIRS}")
+set_target_properties(serial_adc PROPERTIES CXX_VISIBILITY_PRESET hidden)
+set_target_properties(serial_adc PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(parallel_adc STATIC src/parallel_adc.cpp)
 target_link_libraries(parallel_adc clock dma gpio smi)

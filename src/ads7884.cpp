@@ -15,17 +15,25 @@ PYBIND11_MODULE(ads7884, m, py::mod_gil_not_used()) {
 
     py::class_<SerialADC>(m, "SerialADC")
         .def(
-            py::init<int, int, std::pair<float, float>, int>(),
-            py::arg("spi_speed"),
+            py::init<int, std::pair<float, float>, int>(),
             py::arg("spi_flag_bits"),
             py::arg("VREF")=std::make_pair(0.0f, 5.23f),
             py::arg("n_samples")=16384
         )
         .def_property("VREF", &SerialADC::VREF, nullptr)
         .def_property("n_samples", &SerialADC::n_samples, nullptr)
-        .def("get_buffers", &SerialADC::get_buffers)
+        .def("get_buffers", &SerialADC::get_buffers,
+             py::arg("auto_range")=false,
+             py::arg("low_thresh")=0.5f,
+             py::arg("high_thresh")=2.5f,
+             py::arg("trig_mode")="rising_edge",
+             py::arg("skip_samples")=0
+        )
         .def("start_sampling", &SerialADC::start_sampling)
-        .def("stop_sampling", &SerialADC::stop_sampling);
+        .def("stop_sampling", &SerialADC::stop_sampling)
+        .def("toggle_channel", &SerialADC::toggle_channel)
+        .def("n_active_channels", &SerialADC::n_active_channels)
+        .def("resize", &SerialADC::resize);
 
     py::class_<ParallelADC>(m, "ParallelADC")
         .def(

@@ -1,3 +1,5 @@
+from typing import Sequence
+
 print("Imports...")
 import os
 import sys
@@ -21,12 +23,13 @@ from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
 
-from ads7884 import ParallelADC
+from ads7884 import ParallelADC, SerialADC, get_spi_flag_bits
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
 AVAILABLE_BUFFER_SIZES = [int(2 ** size_exp) for size_exp in range(9, 16)]
+AVAILABLE_BUFFER_SIZES[-1:] = [32767]
 
 
 def sample_rate_to_msps_str(sample_rate):
@@ -73,12 +76,21 @@ def set_icon_css(widget, icon_path, size):
 
 
 class Oscilloscope(QApplication):
-    def __init__(self, argv, adc, update_fps=30, n_channels=2, init_sample_rate=int(5e6)):
+    def __init__(
+        self,
+        argv,
+        adc,
+        update_fps: int = 30,
+        n_channels: int = 2,
+        init_sample_rate: int = int(5e6),
+        sample_rates: Sequence[int] = AVAILABLE_SAMPLE_RATES
+    ) -> None:
         super().__init__(argv)
 
         self.adc = adc
         self.update_fps = update_fps
         self.n_channels = n_channels
+        self.sample_rates = sample_rates
 
         self.update_interval_sec = 1 / update_fps
 
@@ -138,7 +150,7 @@ class Oscilloscope(QApplication):
         trig_gbox_layout.addWidget(show_trig_line_checkbox, 2, 0, 1, 2)
 
         self.sample_rate_input = QComboBox()
-        for rate in AVAILABLE_SAMPLE_RATES:
+        for rate in self.sample_rates:
             self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
         self.sample_rate_input.setEditable(False)
         self.sample_rate_input.currentIndexChanged.connect(
@@ -305,7 +317,7 @@ class Oscilloscope(QApplication):
         self.sample_buffer_input.blockSignals(False)
 
     def set_sample_rate(self, sample_rate):
-        if sample_rate not in AVAILABLE_SAMPLE_RATES:
+        if sample_rate not in self.sample_rates:
             raise ValueError(f"Requested sample rate not available: {sample_rate}")
 
         sample_rate_idx = self.sample_rate_input.findData(sample_rate)
@@ -330,13 +342,13 @@ class Oscilloscope(QApplication):
         # for now due to memory bandwidth limitations. If we have more than 1
         # channel active, remove all higher sample rates and switch to 20MS/s
         # if one was selected. Similar to the above logic, if we are in
-        # single-channel mode we can support up to 32768 samples. Otherwise, at
+        # single-channel mode we can support up to 32767 samples. Otherwise, at
         # most 16384.
         n_active_channels = self.adc.n_active_channels()
         ch0_active = self.channel_toggles[0].isChecked()
         is_single_channel_mode = (n_active_channels == 1 and ch0_active)
 
-        sample_rates = AVAILABLE_SAMPLE_RATES
+        sample_rates = self.sample_rates
         buffer_sizes = AVAILABLE_BUFFER_SIZES
 
         if is_single_channel_mode:
@@ -363,7 +375,7 @@ class Oscilloscope(QApplication):
                     self.sample_rate_input.removeItem(idx)
 
             for idx in range(self.sample_buffer_input.count() - 1, -1, -1):
-                if self.sample_buffer_input.itemData(idx) >= 32768:
+                if self.sample_buffer_input.itemData(idx) >= 32767:
                     self.sample_buffer_input.removeItem(idx)
 
             self.sample_rate_input.blockSignals(False)
@@ -375,7 +387,7 @@ class Oscilloscope(QApplication):
 
             # If we had a buffer size larger than the limit, pick the new
             # largest allowed.
-            if self.adc.n_samples > 16384:
+            if self.adc.n_samples >= 32767:
                 self.resize_sample_buffer(16384)
 
     def toggle_paused(self):
@@ -449,10 +461,18 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
+    if "-s" in sys.argv:
+        sys.argv.remove("-s")
+        init_sample_rate = int(1e6)
+        adc = SerialADC(get_spi_flag_bits(clk_pha=1), VREF=(0, 3.3), n_samples=2048)
+        sample_rates = [int(v * 1e6) for v in [0.5, 1, 1.5, 2]]
+    else:
+        init_sample_rate = int(5e6)
+        adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
+        sample_rates = AVAILABLE_SAMPLE_RATES
 
     print("Setting up app...")
-    app = Oscilloscope(sys.argv, adc)
+    app = Oscilloscope(sys.argv, adc, init_sample_rate=init_sample_rate, sample_rates=sample_rates)
 
     print("Starting app...")
     ret = app.exec()

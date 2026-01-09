@@ -28,7 +28,6 @@ markers = []
 for spi_freq in tqdm(freqs):
     spi_freq = int(spi_freq)
     adc = SerialADC(spi_freq, get_spi_flag_bits(clk_pha=1), VREF, N)
-    adc.use_arm_timer = False
 
     start = time.time()
     adc.start_sampling()

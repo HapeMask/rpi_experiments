@@ -8,15 +8,15 @@
 #include <optional>
 #include <utility>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+namespace py = pybind11;
+
 #include "peripherals/clock/clock.hpp"
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
 #include "peripherals/smi/smi.hpp"
 #include "utils/reg_mem_utils.hpp"
-
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-namespace py = pybind11;
 
 class ParallelADC {
     public:
@@ -45,7 +45,7 @@ class ParallelADC {
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
 
-        float _sample_to_float(uint8_t raw_sample) const;
+        float _sample_to_float(uint32_t raw_sample) const;
 
         std::vector<bool> _active_channels;
         py::array_t<float> _sample_bufs;
