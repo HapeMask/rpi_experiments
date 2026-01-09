@@ -127,7 +127,8 @@ class Oscilloscope(QApplication):
         trig_bgrp.addButton(trig_falling_radio)
         trig_rising_radio.setChecked(True)
 
-        show_trig_line_checkbox = QCheckBox("Show Thresh.")
+        show_trig_line_checkbox = QPushButton("Show Thresh.")
+        show_trig_line_checkbox.setCheckable(True)
         show_trig_line_checkbox.setChecked(True)
 
         trig_gbox_layout.addWidget(trig_rising_radio, 0, 0)
@@ -219,7 +220,7 @@ class Oscilloscope(QApplication):
         self.trig_auto_checkbox.stateChanged.connect(self.update_trig_line_visibility)
 
         self.show_trig_line_checkbox = show_trig_line_checkbox
-        self.show_trig_line_checkbox.stateChanged.connect(self.update_trig_line_visibility)
+        self.show_trig_line_checkbox.toggled.connect(self.update_trig_line_visibility)
 
         set_icon_css(trig_rising_radio, "resources/trig_rising.png", 64)
         set_icon_css(trig_falling_radio, "resources/trig_falling.png", 64)
