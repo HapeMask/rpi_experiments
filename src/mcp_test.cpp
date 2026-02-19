@@ -16,17 +16,18 @@ void signal_handler(int signal) {
 
 int main(int argc, char** argv) {
     double Vdd = 5.25;
+
+    double f = 400.0;
+    double A = 1.0;
+
     if (argc > 1) {
-        Vdd = std::stod(argv[1]);
+        f = std::stod(argv[1]);
     }
 
     try {
         MCP4728 dac(Vdd);
         std::signal(SIGINT, signal_handler);
 
-        double f = 800.0;
-        double A = 1.0;
-        
         if (A > (Vdd / 2.0)) {
             std::cerr << "Amplitude too high for Vdd: " << Vdd << std::endl;
             return 1;
