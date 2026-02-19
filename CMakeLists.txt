@@ -26,6 +26,12 @@ target_include_directories(parallel_adc PRIVATE "${pybind11_INCLUDE_DIRS}")
 set_target_properties(parallel_adc PROPERTIES CXX_VISIBILITY_PRESET hidden)
 set_target_properties(parallel_adc PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+add_library(mcp4728 STATIC src/mcp4728.cpp)
+target_include_directories(mcp4728 PUBLIC src)
+
+add_executable(mcp_test src/mcp_test.cpp)
+target_link_libraries(mcp_test mcp4728)
+
 add_executable(gpio_pwm src/gpio_pwm.cpp)
 target_link_libraries(gpio_pwm gpio pwm)
 
