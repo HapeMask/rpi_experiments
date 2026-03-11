@@ -83,7 +83,7 @@ class Oscilloscope(QApplication):
         update_fps: int = 30,
         n_channels: int = 2,
         init_sample_rate: int = int(5e6),
-        sample_rates: Sequence[int] = AVAILABLE_SAMPLE_RATES
+        sample_rates: Sequence[int] = AVAILABLE_SAMPLE_RATES,
     ) -> None:
         super().__init__(argv)
 
@@ -438,7 +438,7 @@ class Oscilloscope(QApplication):
         timestamps = timestamps[0]
 
         if triggered and trig_start is not None:
-            timestamps -= float(trig_start) / self.adc_sample_rate
+            timestamps -= timestamps[trig_start]
 
         return samples, timestamps, triggered
 

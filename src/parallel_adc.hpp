@@ -18,37 +18,28 @@ namespace py = pybind11;
 #include "peripherals/smi/smi.hpp"
 #include "utils/reg_mem_utils.hpp"
 
-class ParallelADC {
+#include "adc.hpp"
+
+class ParallelADC : public ADC {
     public:
         ParallelADC(std::pair<float, float> vref, int n_samples=16384, int n_channels=2);
         virtual ~ParallelADC();
 
-        uint32_t start_sampling(uint32_t sample_rate_hz);
-        void toggle_channel(int channel_idx);
-        void stop_sampling();
-        void resize(int n_samples);
+        uint32_t start_sampling(uint32_t sample_rate_hz) override;
+        void toggle_channel(int channel_idx) override;
+        void stop_sampling() override;
+        void resize(int n_samples) override;
 
-        std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
-            bool auto_range=false,
-            float low_thresh=0.5,
-            float high_thresh=2.5,
-            std::string trig_mode="rising_edge",
-            int skip_samples=0
-        );
-        std::pair<float, float> VREF() const { return _VREF; }
-        int n_samples() const { return _n_samples; }
-        int n_active_channels() const;
+        int n_active_channels() const override;
 
     protected:
-        std::pair<float, float> _VREF;
-        int _n_samples;
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
 
+        void _fetch_data() override;
         float _sample_to_float(uint32_t raw_sample) const;
 
         std::vector<bool> _active_channels;
-        py::array_t<float> _sample_bufs;
         int _highest_active_channel() const;
 
         void _setup_dma_cbs();

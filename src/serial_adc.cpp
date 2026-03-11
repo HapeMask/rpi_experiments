@@ -23,10 +23,10 @@ SerialADC::SerialADC(
     int n_samples,
     int rx_block_size
 ):
-    _rx_block_size(rx_block_size),
+    ADC(vref, n_samples),
     _spi_flag_bits(spi_flag_bits),
-    _spi(8000000, {.bits=spi_flag_bits}),
-    _VREF(vref)
+    _rx_block_size(rx_block_size),
+    _spi(8000000, {.bits=spi_flag_bits})
 {
     resize(n_samples);
 
@@ -46,6 +46,11 @@ SerialADC::~SerialADC() {
 }
 
 void SerialADC::resize(int n_samples) {
+    if (_sample_bufs.ndim() == 3 && _sample_bufs.shape(1) == n_samples) {
+        _n_samples = n_samples;
+        return;
+    }
+
     _n_samples = n_samples;
 
     _sample_bufs = py::array_t<float>(
@@ -160,22 +165,7 @@ float SerialADC::_sample_to_float(uint32_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 1023.f);
 }
 
-std::tuple<py::array_t<float>, bool, std::optional<int>> SerialADC::get_buffers(
-    bool auto_range,
-    float low_thresh,
-    float high_thresh,
-    std::string trig_mode,
-    int skip_samples
-) {
-    // Safety check for skip_samples
-    if (skip_samples < 0) {
-        skip_samples = 0;
-    }
-
-    if (skip_samples >= _n_samples || n_active_channels() == 0) {
-        return {_sample_bufs, false, std::nullopt};
-    }
-
+void SerialADC::_fetch_data() {
     _run_dma();
     _dma.reset(_dma_chan_0);
     _dma.reset(_dma_chan_1);
@@ -189,59 +179,4 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> SerialADC::get_buffers(
         );
         sbuf(0, i, 1) = i;
     }
-
-    // Trigger logic
-    bool triggered = false;
-    std::optional<int> trig_start = std::nullopt;
-
-    if (trig_mode == "none") {
-         return {_sample_bufs, false, std::nullopt};
-    }
-
-    // Only check channel 0 for now.
-    int ch = 0;
-
-    float low = low_thresh;
-    float high = high_thresh;
-
-    if (auto_range) {
-         // Calculate min/max from valid range
-         float min_val = sbuf(ch, skip_samples, 0);
-         float max_val = min_val;
-         for (int i = skip_samples + 1; i < _n_samples; ++i) {
-             const float v = sbuf(ch, i, 0);
-             if (v < min_val) min_val = v;
-             if (v > max_val) max_val = v;
-         }
-
-         const float range = max_val - min_val;
-         low = min_val + 0.2f * range;
-         high = min_val + 0.8f * range;
-    }
-
-    if (trig_mode == "rising_edge") {
-        for (int i = skip_samples; i < _n_samples; ++i) {
-            const float v = sbuf(ch, i, 0);
-            if (v < low) {
-                trig_start = i;
-            }
-            if (v >= high && trig_start.has_value()) {
-                triggered = true;
-                break;
-            }
-        }
-    } else if (trig_mode == "falling_edge") {
-        for (int i = skip_samples; i < _n_samples; ++i) {
-            const float v = sbuf(ch, i, 0);
-            if (v > high) {
-                trig_start = i;
-            }
-            if (v <= low && trig_start.has_value()) {
-                triggered = true;
-                break;
-            }
-        }
-    }
-
-    return {_sample_bufs, triggered, trig_start};
 }

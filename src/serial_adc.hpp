@@ -15,7 +15,9 @@ namespace py = pybind11;
 #include "utils/reg_mem_utils.hpp"
 #include "utils/rpi_zero_2.hpp"
 
-class SerialADC {
+#include "adc.hpp"
+
+class SerialADC : public ADC {
     public:
         SerialADC(
             uint32_t spi_flag_bits,
@@ -25,31 +27,21 @@ class SerialADC {
         );
         virtual ~SerialADC();
 
-        uint32_t start_sampling(uint32_t sample_rate_hz);
-        void stop_sampling();
-        void resize(int n_samples);
+        uint32_t start_sampling(uint32_t sample_rate_hz) override;
+        void toggle_channel(int channel_idx) override {}
+        void stop_sampling() override;
+        void resize(int n_samples) override;
 
-        std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
-            bool auto_range,
-            float low_thresh,
-            float high_thresh,
-            std::string trig_mode,
-            int skip_samples
-        );
-
-        std::pair<float, float> VREF() const { return _VREF; }
-        int n_samples() const { return _n_samples; }
-        int n_active_channels() const { return 1; }
-        void toggle_channel(int channel_idx) const {}
+        int n_active_channels() const override { return 1; }
 
     protected:
-        int _n_samples;
         uint32_t _spi_flag_bits;
 
         void _run_dma();
         void _stop_dma();
         void _setup_dma_cbs();
 
+        void _fetch_data() override;
         float _sample_to_float(uint32_t raw_sample) const;
 
         MemPtrs _data;
@@ -67,7 +59,4 @@ class SerialADC {
         SPI _spi;
         DMA _dma;
         AddressSpaceInfo _asi;
-
-        py::array_t<float> _sample_bufs;
-        std::pair<float, float> _VREF;
 };
