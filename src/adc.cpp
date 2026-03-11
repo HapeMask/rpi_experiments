@@ -4,6 +4,7 @@
 #include <cmath>
 
 std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
+    int screen_width,
     bool auto_range,
     float low_thresh,
     float high_thresh,
@@ -70,5 +71,37 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
         }
     }
 
-    return {_sample_bufs, triggered, trig_start};
+    // Binning logic
+    // We return a buffer of size {n_channels, screen_width, 2}
+    py::array_t<float> binned_bufs({n_channels, screen_width, 2});
+    auto bbuf = binned_bufs.mutable_unchecked<3>();
+
+    float samples_per_bin = static_cast<float>(_n_samples) / screen_width;
+
+    for (int b = 0; b < screen_width; ++b) {
+        int start = static_cast<int>(b * samples_per_bin);
+        int end = static_cast<int>((b + 1) * samples_per_bin);
+        if (end > _n_samples) end = _n_samples;
+        if (start >= end) start = std::max(0, end - 1);
+
+        int count = end - start;
+        for (int ch = 0; ch < n_channels; ++ch) {
+            float sum_val = 0;
+            float sum_ts = 0;
+            for (int i = start; i < end; ++i) {
+                sum_val += sbuf(ch, i, 0);
+                sum_ts += sbuf(ch, i, 1);
+            }
+            bbuf(ch, b, 0) = sum_val / count;
+            bbuf(ch, b, 1) = sum_ts / count;
+        }
+    }
+
+    std::optional<int> binned_trig_start = std::nullopt;
+    if (trig_start.has_value()) {
+        binned_trig_start = static_cast<int>(*trig_start / samples_per_bin);
+    }
+
+
+    return {binned_bufs, triggered, binned_trig_start};
 }

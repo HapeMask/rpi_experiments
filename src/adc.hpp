@@ -21,6 +21,7 @@ public:
     virtual int n_active_channels() const = 0;
 
     virtual std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
+        int screen_width,
         bool auto_range = false,
         float low_thresh = 0.5,
         float high_thresh = 2.5,

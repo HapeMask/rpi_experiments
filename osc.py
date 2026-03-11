@@ -84,6 +84,7 @@ class Oscilloscope(QApplication):
         n_channels: int = 2,
         init_sample_rate: int = int(5e6),
         sample_rates: Sequence[int] = AVAILABLE_SAMPLE_RATES,
+        graph_antialias_factor: int = 8,
     ) -> None:
         super().__init__(argv)
 
@@ -91,6 +92,7 @@ class Oscilloscope(QApplication):
         self.update_fps = update_fps
         self.n_channels = n_channels
         self.sample_rates = sample_rates
+        self.graph_antialias_factor = graph_antialias_factor
 
         self.update_interval_sec = 1 / update_fps
 
@@ -418,7 +420,12 @@ class Oscilloscope(QApplication):
             low_thresh = self.trig_line.value()
             high_thresh = self.trig_line.value()
 
+        screen_width = self.graph.width()
+        if screen_width <= 0:
+            screen_width = 800
+
         buffers, triggered, trig_start = self.adc.get_buffers(
+            screen_width=self.graph_antialias_factor * screen_width,
             auto_range=self.trig_auto_checkbox.isChecked(),
             low_thresh=low_thresh,
             high_thresh=high_thresh,
@@ -472,6 +479,7 @@ def main():
         sample_rates = AVAILABLE_SAMPLE_RATES
 
     print("Setting up app...")
+    pg.setConfigOptions(antialias=True)
     app = Oscilloscope(sys.argv, adc, init_sample_rate=init_sample_rate, sample_rates=sample_rates)
 
     print("Starting app...")

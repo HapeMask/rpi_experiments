@@ -18,6 +18,7 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
 
     py::class_<ADC>(m, "ADC")
         .def("get_buffers", &ADC::get_buffers,
+             py::arg("screen_width"),
              py::arg("auto_range")=false,
              py::arg("low_thresh")=0.5f,
              py::arg("high_thresh")=2.5f,
