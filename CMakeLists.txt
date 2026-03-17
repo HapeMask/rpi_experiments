@@ -39,6 +39,7 @@ target_link_libraries(mcp_test mcp4728)
 
 add_library(frequency_counter src/frequency_counter.cpp)
 target_link_libraries(frequency_counter dma gpio smi clock)
+set_target_properties(frequency_counter PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_executable(freq_count src/freq_count.cpp)
 target_link_libraries(freq_count frequency_counter)
@@ -50,7 +51,7 @@ add_executable(gpclk_test src/gpclk_test.cpp)
 target_link_libraries(gpclk_test clock gpio)
 
 pybind11_add_module(adc_interfaces src/adc_interfaces.cpp)
-target_link_libraries(adc_interfaces PRIVATE serial_adc parallel_adc)
+target_link_libraries(adc_interfaces PRIVATE serial_adc parallel_adc frequency_counter)
 
 # WHY ???
 target_link_libraries(adc_interfaces PRIVATE -Wl,--whole-archive clock -Wl,--no-whole-archive)

@@ -4,11 +4,12 @@ using namespace pybind11::literals;
 namespace py = pybind11;
 
 #include "adc.hpp"
-#include "serial_adc.hpp"
+#include "frequency_counter.hpp"
 #include "parallel_adc.hpp"
 #include "peripherals/gpio/gpio.hpp"
 #include "peripherals/clock/clock.hpp"
 #include "peripherals/spi/spi_defs.hpp"
+#include "serial_adc.hpp"
 
 
 PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
@@ -75,4 +76,14 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
         .value("ALT_4", GPIOMode::ALT_4)
         .value("ALT_5", GPIOMode::ALT_5)
         .export_values();
+
+    py::class_<FrequencyCounter>(m, "FrequencyCounter")
+        .def(
+            py::init<int, int, int, int>(),
+            py::arg("tgt_sample_rate")=50'000'000,
+            py::arg("n_samples")=16384,
+            py::arg("gpio_pin")=8,
+            py::arg("dma_chan")=10
+        )
+        .def("sample", &FrequencyCounter::sample);
 }
