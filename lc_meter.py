@@ -1,7 +1,7 @@
 from math import pi
 
 from custom_viewbox import get_si_prefixes
-from adc_interfaces import FrequencyCounter
+from peripheral_interfaces import FrequencyCounter
 
 
 def solve_L_x0_C_x0(freq_open, freq_cal, C_cal=1e-9):

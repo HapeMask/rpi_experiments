@@ -51,10 +51,14 @@ add_executable(gpclk_test src/gpclk_test.cpp)
 target_link_libraries(gpclk_test clock gpio)
 
 pybind11_add_module(adc_interfaces src/adc_interfaces.cpp)
-target_link_libraries(adc_interfaces PRIVATE serial_adc parallel_adc frequency_counter)
-
-# WHY ???
+target_link_libraries(adc_interfaces PRIVATE serial_adc parallel_adc)
 target_link_libraries(adc_interfaces PRIVATE -Wl,--whole-archive clock -Wl,--no-whole-archive)
+target_link_libraries(adc_interfaces PRIVATE spi dma mailbox gpio smi peripheral reg_mem_utils)
+
+pybind11_add_module(peripheral_interfaces src/peripheral_interfaces.cpp)
+target_link_libraries(peripheral_interfaces PRIVATE frequency_counter adc)
+target_link_libraries(peripheral_interfaces PRIVATE -Wl,--whole-archive clock -Wl,--no-whole-archive)
+target_link_libraries(peripheral_interfaces PRIVATE dma mailbox gpio smi peripheral reg_mem_utils)
 
 add_custom_target(copy_py
     ALL # This ensures the target is built as part of the default build process

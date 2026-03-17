@@ -4,7 +4,8 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from adc_interfaces import get_spi_flag_bits, SerialADC
+from peripheral_interfaces import get_spi_flag_bits
+from adc_interfaces import SerialADC
 
 
 N = 100000
