@@ -7,9 +7,8 @@
 // Change include for your device.
 #include "utils/rpi_zero_2.hpp"
 
-SPI::SPI(uint32_t speed, SPIControlStatus init_status) :
-    Peripheral(SPI_BASE_OFS, SPI_LEN),
-    _speed(speed)
+SPI::SPI(uint32_t tgt_clock_speed, SPIControlStatus init_status) :
+    Peripheral(SPI_BASE_OFS, SPI_LEN)
 {
     _cs_reg = (volatile SPIControlStatus*)reg_addr(SPI_CS_OFS);
     _fifo_reg = reg_addr(SPI_FIFO_OFS);
@@ -20,7 +19,7 @@ SPI::SPI(uint32_t speed, SPIControlStatus init_status) :
     _orig_cs.bits = _cs_reg->bits;
     _cs_reg->bits = init_status.bits;
 
-    set_clock(speed);
+    set_clock(tgt_clock_speed);
 }
 
 SPI::~SPI() {
@@ -29,10 +28,8 @@ SPI::~SPI() {
     }
 }
 
-void SPI::set_clock(uint32_t speed) {
-    _speed = speed;
-
-    const uint32_t cdiv = SPI_CLOCK_HZ / _speed;
+void SPI::set_clock(uint32_t tgt_clock_speed) {
+    const uint32_t cdiv = SPI_CLOCK_HZ / tgt_clock_speed;
     if (cdiv < 1 or cdiv > 32768) {
         throw std::runtime_error("Requested SPI clock speed out of range.");
     }
@@ -42,6 +39,8 @@ void SPI::set_clock(uint32_t speed) {
     }
 
     *_cdiv_reg = cdiv;
+
+    _speed = SPI_CLOCK_HZ / cdiv;
 }
 
 void SPI::xfer(const char* tx_buf, char* rx_buf, size_t n_bytes) const {

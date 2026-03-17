@@ -8,12 +8,13 @@
 
 class SPI : public Peripheral {
     public:
-        SPI(uint32_t speed, SPIControlStatus init_status);
+        SPI(uint32_t tgt_clock_speed, SPIControlStatus init_status);
         virtual ~SPI();
 
         void xfer(const char* tx_buf, char* rx_buf, size_t n_bytes) const;
-        void set_clock(uint32_t speed);
+        void set_clock(uint32_t tgt_clock_speed);
         void* reg_to_bus(uint32_t reg_ofs_bytes) const;
+        uint32_t clock_speed() const { return _speed; }
 
         void start_dma(
             uint32_t tx_req_thresh,
