@@ -56,7 +56,15 @@ std::tuple<std::string, std::string, float> get_si_prefixes(float val) {
 }
 
 int main(int argc, char** argv) {
-    FrequencyCounter fcount;
+    int tgt_sample_rate = 50'000'000;
+    if (argc > 1) {
+        tgt_sample_rate = std::stoi(argv[1]);
+    }
+
+    const auto [sr_pref, sr_inv_pref, sr_scale] = get_si_prefixes(tgt_sample_rate);
+    std::cout << "Sample rate: " << (tgt_sample_rate / sr_scale) << " " << sr_pref << "Hz" << std::endl;
+
+    FrequencyCounter fcount(tgt_sample_rate);
 
     signal(SIGINT, shutdown);
     while (!done) {

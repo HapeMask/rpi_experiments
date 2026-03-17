@@ -2,9 +2,9 @@
 
 
 FrequencyCounter::FrequencyCounter(
-    int gpio_pin,
     int tgt_sample_rate,
     int n_samples,
+    int gpio_pin,
     int dma_chan
 ) : _gpio_pin(gpio_pin), _n_samples(n_samples), _dma_chan(dma_chan), _dma(/*n_cbs=*/2) {
     if ((n_samples % 8) != 0) {

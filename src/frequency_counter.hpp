@@ -11,9 +11,9 @@
 class FrequencyCounter {
     public:
         FrequencyCounter(
-            int gpio_pin=8,
             int tgt_sample_rate=50'000'000,
             int n_samples=16384,
+            int gpio_pin=8,
             int dma_chan = 10
         );
         virtual ~FrequencyCounter();
