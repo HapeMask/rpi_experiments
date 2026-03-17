@@ -17,29 +17,29 @@ def get_si_prefixes(val: float) -> Tuple[str, str, float]:
         return pref, inv_pref, scale
 
     val = abs(val)
-    flip = False
+    lval = log10(val)
+    flip = (val < 1)
 
-    if val < 1:
-        flip = True
-        val = 1 / val
-
-    lval = round(log10(val))
-
-    if lval >= 9:
+    if lval >= 12 or lval <= -9:
+        pref = "T"
+        inv_pref = "p"
+        scale = 1e12
+    if lval >= 9 or lval <= -6:
         pref = "G"
         inv_pref = "n"
         scale = 1e9
-    elif lval >= 6:
+    elif lval >= 6 or lval <= -3:
         pref = "M"
         inv_pref = "u"
         scale = 1e6
-    elif lval >= 3:
+    elif lval >= 3 or lval < 0:
         pref = "K"
         inv_pref = "m"
         scale = 1e3
 
     if flip:
         pref, inv_pref = inv_pref, pref
+        scale = 1 / scale
 
     return pref, inv_pref, scale
 
@@ -50,8 +50,8 @@ def format_dVdt(dV: float, dt: float) -> str:
     p_prefix, f_prefix, t_scale = get_si_prefixes(dt)
 
     return (
-        f"dV: {dV * v_scale:0.3f} {v_prefix}V\n"
-        f"dt: {dt * t_scale:0.3f} {p_prefix}s ({freq / t_scale:0.3f} {f_prefix}Hz)"
+        f"dV: {dV / v_scale:0.3f} {v_prefix}V\n"
+        f"dt: {dt / t_scale:0.3f} {p_prefix}s ({freq / t_scale:0.3f} {f_prefix}Hz)"
     )
 
 

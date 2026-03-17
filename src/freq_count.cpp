@@ -26,24 +26,22 @@ std::tuple<std::string, std::string, float> get_si_prefixes(float val) {
     }
 
     val = std::abs(val);
-    bool flip = false;
-
-    if (val < 1) {
-        flip = true;
-        val = 1.f / val;
-    }
-
     auto lval = std::log10(val);
+    bool flip = (val < 1);
 
-    if (lval >= 9) {
+    if (lval >= 12 || lval <= -9) {
+        pref = "T";
+        inv_pref = "p";
+        scale = 1e12;
+    } else if (lval >= 9 || lval <= -6) {
         pref = "G";
         inv_pref = "n";
         scale = 1e9;
-    } else if (lval >= 6) {
+    } else if (lval >= 6 || lval <= -3) {
         pref = "M";
         inv_pref = "u";
         scale = 1e6;
-    } else if (lval >= 3) {
+    } else if (lval >= 3 || lval < 0) {
         pref = "K";
         inv_pref = "m";
         scale = 1e3;
@@ -51,6 +49,7 @@ std::tuple<std::string, std::string, float> get_si_prefixes(float val) {
 
     if (flip) {
         std::swap(pref, inv_pref);
+        scale = 1.f / scale;
     }
 
     return {pref, inv_pref, scale};
