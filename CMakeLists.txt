@@ -37,6 +37,12 @@ target_include_directories(mcp4728 PUBLIC src)
 add_executable(mcp_test src/mcp_test.cpp)
 target_link_libraries(mcp_test mcp4728)
 
+add_library(frequency_counter src/frequency_counter.cpp)
+target_link_libraries(frequency_counter dma gpio smi clock)
+
+add_executable(freq_count src/freq_count.cpp)
+target_link_libraries(freq_count frequency_counter)
+
 add_executable(gpio_pwm src/gpio_pwm.cpp)
 target_link_libraries(gpio_pwm gpio pwm)
 
