@@ -59,7 +59,7 @@ target_link_libraries(adc_interfaces PRIVATE -Wl,--whole-archive clock -Wl,--no-
 add_custom_target(copy_py
     ALL # This ensures the target is built as part of the default build process
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/osc.py ${CMAKE_CURRENT_SOURCE_DIR}/custom_viewbox.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/*.py
             ${CMAKE_BINARY_DIR}/
     COMMENT "Copying Python code to build directory"
 )
