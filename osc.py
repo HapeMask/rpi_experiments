@@ -32,6 +32,12 @@ AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1, 2.5, 5, 10, 20, 31.25, 40, 5
 AVAILABLE_BUFFER_SIZES = [int(2 ** size_exp) for size_exp in range(9, 16)]
 AVAILABLE_BUFFER_SIZES[-1:] = [32767]
 
+# Colors for oscilloscope channels (Ch0, Ch1, ...)
+CHANNEL_COLORS = ["#33ee66", "#00aeff", "#ff6633", "#ffdd00", "#cc44ff", "#ff88aa"]
+
+# In LA mode: vertical spacing between digital channels (in "volts" units)
+LA_CHANNEL_SPACING = 1.5
+
 
 def sample_rate_to_msps_str(sample_rate):
     return f"{sample_rate / 1e6:2.2f} MS/s"
@@ -94,6 +100,8 @@ class Oscilloscope(QApplication):
         self.n_channels = n_channels
         self.sample_rates = sample_rates
         self.graph_antialias_factor = graph_antialias_factor
+        self.la_mode = False
+        self.osc_lines = []
 
         self.update_interval_sec = 1 / update_fps
 
@@ -179,9 +187,17 @@ class Oscilloscope(QApplication):
             channel_hbox.addWidget(ch_toggle)
             self.channel_toggles.append(ch_toggle)
 
+        la_mode_button = QPushButton("LA Mode")
+        la_mode_button.setCheckable(True)
+        la_mode_button.setChecked(False)
+        la_mode_button.clicked.connect(self.toggle_la_mode)
+        la_mode_button.setStyleSheet("QPushButton:checked {background-color: #ff6633;}")
+        self.la_mode_button = la_mode_button
+
         right_box.addWidget(QLabel("Sample Rate"))
         right_box.addWidget(self.sample_rate_input)
         right_box.addLayout(channel_hbox)
+        right_box.addWidget(la_mode_button)
         right_box.addWidget(QLabel("Sample Buffer"))
         right_box.addWidget(self.sample_buffer_input)
         right_box.addStretch(1)
@@ -299,21 +315,25 @@ class Oscilloscope(QApplication):
         darkMode = windowTextLightness > windowLightness
         self.setProperty("darkMode", darkMode)
 
+    def _recreate_plot_lines(self):
+        """Clear and recreate plot lines for the current number of active channels."""
+        self.graph.clear()
+        n_ch = self.adc.n_active_channels()
+        dummy = np.zeros(max(self.adc.n_samples, 1), np.float32)
+        self.osc_lines = []
+        for ch_idx in range(n_ch):
+            color = CHANNEL_COLORS[ch_idx % len(CHANNEL_COLORS)]
+            line = self.graph.plot(dummy, dummy, pen=pg.mkPen(color, width=1))
+            self.osc_lines.append(line)
+        self.graph.getPlotItem().addItem(self.trig_line)
+
     def resize_sample_buffer(self, n_samples):
         buffer_size_idx = self.sample_buffer_input.findData(n_samples)
         if buffer_size_idx < 0:
             raise KeyError(f"Sample count {n_samples} not found in dropdown.")
 
         self.adc.resize(n_samples)
-        self.graph.clear()
-
-        self.x = np.linspace(0, self.update_interval_sec, self.adc.n_samples)
-        self.y = np.zeros((self.adc.n_samples,), np.float32)
-        self.osc_line = self.graph.plot(
-            self.x, self.y, pen=pg.mkPen("#33ee66", width=1)
-        )
-
-        self.graph.getPlotItem().addItem(self.trig_line)
+        self._recreate_plot_lines()
 
         self.sample_buffer_input.blockSignals(True)
         self.sample_buffer_input.setCurrentIndex(buffer_size_idx)
@@ -335,8 +355,12 @@ class Oscilloscope(QApplication):
 
     def reset_graph_range(self):
         self.graph.setXRange(0, self.adc.n_samples / self.adc_sample_rate)
-        vref = self.adc.VREF
-        self.graph.setYRange(vref[0], vref[1])
+        if self.la_mode:
+            n_ch = self.adc.n_active_channels()
+            self.graph.setYRange(-0.25, n_ch * LA_CHANNEL_SPACING)
+        else:
+            vref = self.adc.VREF
+            self.graph.setYRange(vref[0], vref[1])
 
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
@@ -392,6 +416,21 @@ class Oscilloscope(QApplication):
             # largest allowed.
             if self.adc.n_samples >= 32767:
                 self.resize_sample_buffer(16384)
+                return  # resize_sample_buffer already calls _recreate_plot_lines
+
+        self._recreate_plot_lines()
+
+    def toggle_la_mode(self):
+        self.la_mode = self.la_mode_button.isChecked()
+        self.adc.set_logic_analyzer_mode(self.la_mode, 8)
+
+        # Channel toggles only apply in oscilloscope mode
+        for toggle in self.channel_toggles:
+            toggle.setEnabled(not self.la_mode)
+
+        self._recreate_plot_lines()
+        self.update_trig_line_visibility()
+        self.reset_graph_range()
 
     def toggle_paused(self):
         self.paused = not self.paused
@@ -399,9 +438,10 @@ class Oscilloscope(QApplication):
 
     def update_trig_line_visibility(self):
         # The trig_line should be visible when the auto trigger checkbox is
-        # not checked and the trigger mode is not "none"
+        # not checked, the trigger mode is not "none", and not in LA mode
         visible = (
-            (not self.trig_auto_checkbox.isChecked())
+            (not self.la_mode)
+            and (not self.trig_auto_checkbox.isChecked())
             and (self.trig_mode != "none")
             and self.show_trig_line_checkbox.isChecked()
         )
@@ -436,18 +476,16 @@ class Oscilloscope(QApplication):
 
         buffers = buffers[:, sample_cut_idx:]
 
-        # shape: [n_ch, n_samples, 2]
+        # shape: [n_ch, n_binned, 2] — last dim is [value, sample_idx]
         samples, timestamps = buffers[..., 0], buffers[..., 1]
 
-        timestamps = timestamps / self.adc_sample_rate
-
-        # TODO: For now assume we only have one channel.
-        samples = samples[0]
-        timestamps = timestamps[0]
+        # All channels share the same time axis; use channel 0's timestamps.
+        timestamps = timestamps[0] / self.adc_sample_rate
 
         if triggered and trig_start is not None:
             timestamps -= timestamps[trig_start]
 
+        # samples shape: [n_ch, n_binned]
         return samples, timestamps, triggered
 
     def plot_callback(self):
@@ -455,7 +493,15 @@ class Oscilloscope(QApplication):
             return
 
         samples, timestamps, triggered = self.sample_osc()
-        self.osc_line.setData(timestamps, samples)
+
+        for ch_idx, line in enumerate(self.osc_lines):
+            if ch_idx >= samples.shape[0]:
+                break
+            ch_samples = samples[ch_idx]
+            if self.la_mode:
+                # Stack digital channels: channel i offset by i * spacing
+                ch_samples = ch_samples + ch_idx * LA_CHANNEL_SPACING
+            line.setData(timestamps, ch_samples)
 
         if self.trig_oneshot_button.isChecked() and triggered:
             self.toggle_paused()
