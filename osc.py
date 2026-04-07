@@ -28,7 +28,7 @@ from peripheral_interfaces import get_spi_flag_bits
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
-AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
+AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
 AVAILABLE_BUFFER_SIZES = [int(2 ** size_exp) for size_exp in range(9, 16)]
 AVAILABLE_BUFFER_SIZES[-1:] = [32767]
 

@@ -141,6 +141,7 @@ void ParallelADC::_setup_dma_cbs() {
 
 uint32_t ParallelADC::start_sampling(uint32_t sample_rate_hz) {
     if (_logic_analyzer_mode) {
+        _cur_real_sample_rate = sample_rate_hz;
         _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
         _pwm.enable_dma();
         return sample_rate_hz;
@@ -203,7 +204,7 @@ void ParallelADC::_fetch_data() {
     if (_logic_analyzer_mode) {
         _pwm.start();
         _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-        _dma.wait(_dma_chan_0);
+        _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
         _dma.reset(_dma_chan_0);
         _pwm.stop();
 
@@ -219,7 +220,7 @@ void ParallelADC::_fetch_data() {
 
     _smi.start_xfer(_n_samples, /*packed=*/true);
     _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-    _dma.wait(_dma_chan_0);
+    _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
     _smi.stop_xfer();
 
     // If only the first channel is active, each uint16_t contains two packed

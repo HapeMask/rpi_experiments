@@ -39,6 +39,7 @@ class SerialADC : public ADC {
 
     protected:
         uint32_t _spi_flag_bits;
+        uint32_t _sample_rate;
 
         void _run_dma();
         void _stop_dma();

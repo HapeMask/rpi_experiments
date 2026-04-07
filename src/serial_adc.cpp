@@ -196,7 +196,7 @@ void SerialADC::_run_dma() {
     _spi.start_dma(4, 8, 4, 8);
     _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
     _dma.start(_dma_chan_1, /*first_cb_idx=*/2);
-    _dma.wait(_dma_chan_1);
+    _dma.wait(_dma_chan_1, _n_samples, 100 * 1000000 / _sample_rate);
 }
 
 void SerialADC::_stop_dma() {
@@ -208,6 +208,8 @@ void SerialADC::_stop_dma() {
 }
 
 uint32_t SerialADC::start_sampling(uint32_t sample_rate_hz) {
+    _sample_rate = sample_rate_hz;
+
     if (_logic_analyzer_mode) {
         _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
         _pwm.enable_dma();
@@ -230,7 +232,7 @@ void SerialADC::_fetch_data() {
     if (_logic_analyzer_mode) {
         _pwm.start();
         _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-        _dma.wait(_dma_chan_0);
+        _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _sample_rate);
         _dma.reset(_dma_chan_0);
         _pwm.stop();
 
