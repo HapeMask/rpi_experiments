@@ -15,6 +15,7 @@ namespace py = pybind11;
 #include "peripherals/clock/clock.hpp"
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
+#include "peripherals/pwm/pwm.hpp"
 #include "peripherals/smi/smi.hpp"
 #include "utils/reg_mem_utils.hpp"
 
@@ -55,6 +56,7 @@ class ParallelADC : public ADC {
         uint32_t* _la_rx_data_bus = nullptr;
 
         DMA _dma;
+        PWM _pwm{/*use_fifo=*/true};
         SMI _smi;
         GPIO _gpio;
         AddressSpaceInfo _asi;

@@ -12,6 +12,7 @@
 
 #include "peripherals/gpio/gpio.hpp"
 #include "peripherals/gpio/gpio_defs.hpp"
+#include "peripherals/pwm/pwm_defs.hpp"
 #include "peripherals/spi/spi.hpp"
 #include "peripherals/spi/spi_defs.hpp"
 #include "serial_adc.hpp"
@@ -105,14 +106,33 @@ void SerialADC::resize(int n_samples) {
 
 void SerialADC::_setup_dma_cbs() {
     if (_logic_analyzer_mode) {
-        _dma.resize_cbs(1);
-        auto& cb0 = _dma.get_cb(0);
+        _dma.resize_cbs(2 * _n_samples);
+
         auto gpio_lev0_bus_addr = (uint32_t)(uintptr_t)_gpio.reg_to_bus(GPIO_LVL_OFS);
-        cb0.ti = DMATransferInfo{{.dest_addr_incr=1, .src_addr_incr=0}}.bits;
-        cb0.src = gpio_lev0_bus_addr;
-        cb0.dst = (uint32_t)(uintptr_t)_la_rx_data_bus;
-        cb0.len = _n_samples * sizeof(uint32_t);
-        cb0.next_cb = 0;
+        auto pwm_fifo_bus_addr = (uint32_t)(uintptr_t)_pwm.reg_to_bus(PWM0_FIF_OFS);
+
+        // Pairs of CBs per sample: cb_pwm waits for PWM DREQ then writes to FIFO
+        // (consuming the DREQ token), then cb_gpio immediately reads GPIO.
+        for (int i = 0; i < _n_samples; ++i) {
+            auto& cb_pwm  = _dma.get_cb(2 * i);
+            auto& cb_gpio = _dma.get_cb(2 * i + 1);
+
+            cb_pwm.ti = DMATransferInfo{{
+                .wait_for_writes=1, .dest_dma_req=1,
+                .src_ignore_reads=1, .peri_map=DMA_PERI_MAP_PWM
+            }}.bits;
+            cb_pwm.src = 0;
+            cb_pwm.dst = pwm_fifo_bus_addr;
+            cb_pwm.len = 4;
+            cb_pwm.next_cb = (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 1);
+
+            cb_gpio.ti = DMATransferInfo{{.wait_for_writes=1}}.bits;
+            cb_gpio.src = gpio_lev0_bus_addr;
+            cb_gpio.dst = (uint32_t)(uintptr_t)(_la_rx_data_bus + i);
+            cb_gpio.len = 4;
+            cb_gpio.next_cb = (i < _n_samples - 1) ?
+                (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 2) : 0;
+        }
         return;
     }
 
@@ -188,6 +208,11 @@ void SerialADC::_stop_dma() {
 }
 
 uint32_t SerialADC::start_sampling(uint32_t sample_rate_hz) {
+    if (_logic_analyzer_mode) {
+        _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
+        _pwm.enable_dma();
+        return sample_rate_hz;
+    }
     _spi.set_clock(16 * sample_rate_hz);
     return sample_rate_hz;
 }
@@ -203,9 +228,11 @@ void SerialADC::_fetch_data() {
     auto sbuf = _sample_bufs.mutable_unchecked<3>();
 
     if (_logic_analyzer_mode) {
+        _pwm.start();
         _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
         _dma.wait(_dma_chan_0);
         _dma.reset(_dma_chan_0);
+        _pwm.stop();
 
         for (int i = 0; i < _n_samples; ++i) {
             const uint32_t gpio_word = _la_rx_data_virt[i];

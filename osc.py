@@ -35,8 +35,8 @@ AVAILABLE_BUFFER_SIZES[-1:] = [32767]
 # Colors for oscilloscope channels (Ch0, Ch1, ...)
 CHANNEL_COLORS = ["#33ee66", "#00aeff", "#ff6633", "#ffdd00", "#cc44ff", "#ff88aa"]
 
-# In LA mode: vertical spacing between digital channels (in "volts" units)
-LA_CHANNEL_SPACING = 1.5
+# In LA mode: max buffer size (DMA len is 16-bit; 16384*4=65536 overflows)
+LA_MAX_SAMPLES = 16383
 
 
 def sample_rate_to_msps_str(sample_rate):
@@ -357,7 +357,7 @@ class Oscilloscope(QApplication):
         self.graph.setXRange(0, self.adc.n_samples / self.adc_sample_rate)
         if self.la_mode:
             n_ch = self.adc.n_active_channels()
-            self.graph.setYRange(-0.25, n_ch * LA_CHANNEL_SPACING)
+            self.graph.setYRange(-0.25, n_ch)
         else:
             vref = self.adc.VREF
             self.graph.setYRange(vref[0], vref[1])
@@ -428,7 +428,26 @@ class Oscilloscope(QApplication):
         for toggle in self.channel_toggles:
             toggle.setEnabled(not self.la_mode)
 
-        self._recreate_plot_lines()
+        self.sample_buffer_input.blockSignals(True)
+        if self.la_mode:
+            # LA mode DMA len is 16-bit; >= 16384 samples * 4 bytes overflows
+            for idx in range(self.sample_buffer_input.count() - 1, -1, -1):
+                if self.sample_buffer_input.itemData(idx) > LA_MAX_SAMPLES:
+                    self.sample_buffer_input.removeItem(idx)
+            # Configure PWM at current sample rate for paced GPIO reads
+            self.adc_sample_rate = self.adc.start_sampling(self.adc_sample_rate)
+        else:
+            for size in AVAILABLE_BUFFER_SIZES:
+                if self.sample_buffer_input.findData(size) < 0:
+                    self.sample_buffer_input.addItem(str(size), size)
+        self.sample_buffer_input.blockSignals(False)
+
+        if self.la_mode and self.adc.n_samples > LA_MAX_SAMPLES:
+            max_allowed = self.sample_buffer_input.itemData(self.sample_buffer_input.count() - 1)
+            self.resize_sample_buffer(max_allowed)
+        else:
+            self._recreate_plot_lines()
+
         self.update_trig_line_visibility()
         self.reset_graph_range()
 
@@ -499,8 +518,8 @@ class Oscilloscope(QApplication):
                 break
             ch_samples = samples[ch_idx]
             if self.la_mode:
-                # Stack digital channels: channel i offset by i * spacing
-                ch_samples = ch_samples + ch_idx * LA_CHANNEL_SPACING
+                # Bit i spans [i, i+0.5]: scale 0/1 to 0/0.5, then offset by bit index
+                ch_samples = ch_samples * 0.5 + ch_idx
             line.setData(timestamps, ch_samples)
 
         if self.trig_oneshot_button.isChecked() and triggered:

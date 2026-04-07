@@ -10,6 +10,7 @@ namespace py = pybind11;
 
 #include "peripherals/dma/dma.hpp"
 #include "peripherals/gpio/gpio.hpp"
+#include "peripherals/pwm/pwm.hpp"
 #include "peripherals/spi/spi.hpp"
 #include "peripherals/spi/spi_defs.hpp"
 #include "utils/reg_mem_utils.hpp"
@@ -63,6 +64,7 @@ class SerialADC : public ADC {
 
         GPIO _gpio;
         SPI _spi;
+        PWM _pwm{/*use_fifo=*/true};
         DMA _dma;
         AddressSpaceInfo _asi;
 };
