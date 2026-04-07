@@ -32,6 +32,8 @@ class ParallelADC : public ADC {
 
         int n_active_channels() const override;
 
+        void set_logic_analyzer_mode(bool enable, int n_bits = 8) override;
+
     protected:
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
@@ -47,6 +49,10 @@ class ParallelADC : public ADC {
         MemPtrs _data;
         uint16_t* _rx_data_virt = nullptr;
         uint16_t* _rx_data_bus = nullptr;
+
+        MemPtrs _la_data;
+        uint32_t* _la_rx_data_virt = nullptr;
+        uint32_t* _la_rx_data_bus = nullptr;
 
         DMA _dma;
         SMI _smi;

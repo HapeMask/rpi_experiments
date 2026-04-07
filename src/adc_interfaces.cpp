@@ -28,7 +28,12 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
         .def("stop_sampling", &ADC::stop_sampling)
         .def("toggle_channel", &ADC::toggle_channel)
         .def("n_active_channels", &ADC::n_active_channels)
-        .def("resize", &ADC::resize);
+        .def("resize", &ADC::resize)
+        .def("set_logic_analyzer_mode", &ADC::set_logic_analyzer_mode,
+             py::arg("enable"),
+             py::arg("n_bits")=8
+        )
+        .def_property_readonly("logic_analyzer_mode", &ADC::logic_analyzer_mode);
 
     py::class_<SerialADC, ADC>(m, "SerialADC")
         .def(

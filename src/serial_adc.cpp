@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "peripherals/gpio/gpio.hpp"
+#include "peripherals/gpio/gpio_defs.hpp"
 #include "peripherals/spi/spi.hpp"
 #include "peripherals/spi/spi_defs.hpp"
 #include "serial_adc.hpp"
@@ -43,6 +44,12 @@ SerialADC::~SerialADC() {
     } else if (_data.virt) {
         free(_data.virt);
     }
+
+    if (_dma._use_vc_mem && _la_data.vc_handle) {
+        _dma._mbox.free_vc_mem(_la_data);
+    } else if (_la_data.virt) {
+        free(_la_data.virt);
+    }
 }
 
 void SerialADC::resize(int n_samples) {
@@ -53,35 +60,62 @@ void SerialADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
+    int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
     _sample_bufs = py::array_t<float>(
-        {_n_channels, _n_samples, 2},
+        {n_first_dim, _n_samples, 2},
         {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
     );
     _sample_bufs[py::ellipsis()] = 0.f;
 
-    // 3 32-bit values for the static transmit data + 16 bits per sample.
-    const int n_locked_bytes = 3 * sizeof(uint32_t) + n_samples * sizeof(uint16_t);
+    if (_logic_analyzer_mode) {
+        const int n_la_bytes = n_samples * sizeof(uint32_t);
+        if (_dma._use_vc_mem && _la_data.vc_handle) _dma._mbox.free_vc_mem(_la_data);
+        else if (_la_data.virt) free(_la_data.virt);
 
-    if (_dma._use_vc_mem) {
-        _data = _dma._mbox.alloc_vc_mem(
-            n_locked_bytes,
-            _asi.page_size
-        );
+        if (_dma._use_vc_mem) {
+            _la_data = _dma._mbox.alloc_vc_mem(n_la_bytes, _asi.page_size);
+        } else {
+            _la_data.virt = alloc_locked_block(n_la_bytes, _asi.page_size);
+            _la_data.phys = virt_to_phys(_la_data.virt, _asi.page_size);
+            _la_data.bus = _asi.phys_to_bus(_la_data.phys);
+        }
+        _la_rx_data_virt = (uint32_t*)_la_data.virt;
+        _la_rx_data_bus = (uint32_t*)_la_data.bus;
     } else {
-        _data.virt = alloc_locked_block(n_locked_bytes, _asi.page_size);
-        _data.phys = virt_to_phys(_data.virt, _asi.page_size);
-        _data.bus = _asi.phys_to_bus(_data.phys);
-    }
+        // 3 32-bit values for the static transmit data + 16 bits per sample.
+        const int n_locked_bytes = 3 * sizeof(uint32_t) + n_samples * sizeof(uint16_t);
+        if (_dma._use_vc_mem && _data.vc_handle) _dma._mbox.free_vc_mem(_data);
+        else if (_data.virt) free(_data.virt);
 
-    _tx_data_virt = (uint32_t*)_data.virt;
-    _tx_data_bus = (uint32_t*)_data.bus;
-    _rx_data_virt = (uint8_t*)(_tx_data_virt + 3);
-    _rx_data_bus = (uint8_t*)(_tx_data_bus + 3);
+        if (_dma._use_vc_mem) {
+            _data = _dma._mbox.alloc_vc_mem(n_locked_bytes, _asi.page_size);
+        } else {
+            _data.virt = alloc_locked_block(n_locked_bytes, _asi.page_size);
+            _data.phys = virt_to_phys(_data.virt, _asi.page_size);
+            _data.bus = _asi.phys_to_bus(_data.phys);
+        }
+        _tx_data_virt = (uint32_t*)_data.virt;
+        _tx_data_bus = (uint32_t*)_data.bus;
+        _rx_data_virt = (uint8_t*)(_tx_data_virt + 3);
+        _rx_data_bus = (uint8_t*)(_tx_data_bus + 3);
+    }
 
     _setup_dma_cbs();
 }
 
 void SerialADC::_setup_dma_cbs() {
+    if (_logic_analyzer_mode) {
+        _dma.resize_cbs(1);
+        auto& cb0 = _dma.get_cb(0);
+        auto gpio_lev0_bus_addr = (uint32_t)(uintptr_t)_gpio.reg_to_bus(GPIO_LVL_OFS);
+        cb0.ti = DMATransferInfo{{.dest_addr_incr=1, .src_addr_incr=0}}.bits;
+        cb0.src = gpio_lev0_bus_addr;
+        cb0.dst = (uint32_t)(uintptr_t)_la_rx_data_bus;
+        cb0.len = _n_samples * sizeof(uint32_t);
+        cb0.next_cb = 0;
+        return;
+    }
+
     const int n_rx_cbs = ((2 * _n_samples) + (_rx_block_size - 1)) / _rx_block_size;
 
     if ((2 * _n_samples) & 0xffff0000) {
@@ -166,12 +200,28 @@ float SerialADC::_sample_to_float(uint32_t raw_sample) const {
 }
 
 void SerialADC::_fetch_data() {
+    auto sbuf = _sample_bufs.mutable_unchecked<3>();
+
+    if (_logic_analyzer_mode) {
+        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+        _dma.wait(_dma_chan_0);
+        _dma.reset(_dma_chan_0);
+
+        for (int i = 0; i < _n_samples; ++i) {
+            const uint32_t gpio_word = _la_rx_data_virt[i];
+            for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
+                sbuf(bit, i, 0) = ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
+                sbuf(bit, i, 1) = i;
+            }
+        }
+        return;
+    }
+
     _run_dma();
     _dma.reset(_dma_chan_0);
     _dma.reset(_dma_chan_1);
     _spi.stop_dma();
 
-    auto sbuf = _sample_bufs.mutable_unchecked<3>();
     for (int i=0; i < _n_samples; ++i) {
         sbuf(0, i, 0) = _sample_to_float(
             ((uint32_t)_rx_data_virt[2 * i + 0] << 4) |
@@ -179,4 +229,65 @@ void SerialADC::_fetch_data() {
         );
         sbuf(0, i, 1) = i;
     }
+}
+
+void SerialADC::set_logic_analyzer_mode(bool enable, int n_bits) {
+    if (enable && n_bits != 8 && n_bits != 16) {
+        throw std::runtime_error("n_bits must be 8 or 16");
+    }
+
+    // Free any existing logic analyzer buffer
+    if (_dma._use_vc_mem && _la_data.vc_handle) {
+        _dma._mbox.free_vc_mem(_la_data);
+    } else if (_la_data.virt) {
+        free(_la_data.virt);
+    }
+    _la_data = {};
+    _la_rx_data_virt = nullptr;
+    _la_rx_data_bus = nullptr;
+
+    _logic_analyzer_mode = enable;
+    _logic_analyzer_n_bits = enable ? n_bits : 8;
+
+    if (enable) {
+        const int n_la_bytes = _n_samples * sizeof(uint32_t);
+        if (_dma._use_vc_mem) {
+            _la_data = _dma._mbox.alloc_vc_mem(n_la_bytes, _asi.page_size);
+        } else {
+            _la_data.virt = alloc_locked_block(n_la_bytes, _asi.page_size);
+            _la_data.phys = virt_to_phys(_la_data.virt, _asi.page_size);
+            _la_data.bus = _asi.phys_to_bus(_la_data.phys);
+        }
+        _la_rx_data_virt = (uint32_t*)_la_data.virt;
+        _la_rx_data_bus = (uint32_t*)_la_data.bus;
+
+        _sample_bufs = py::array_t<float>(
+            {n_bits, _n_samples, 2},
+            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+        );
+    } else {
+        // Restore normal-mode buffer; re-use existing _data allocation if present
+        if (!_data.virt) {
+            const int n_locked_bytes = 3 * sizeof(uint32_t) + _n_samples * sizeof(uint16_t);
+            if (_dma._use_vc_mem) {
+                _data = _dma._mbox.alloc_vc_mem(n_locked_bytes, _asi.page_size);
+            } else {
+                _data.virt = alloc_locked_block(n_locked_bytes, _asi.page_size);
+                _data.phys = virt_to_phys(_data.virt, _asi.page_size);
+                _data.bus = _asi.phys_to_bus(_data.phys);
+            }
+            _tx_data_virt = (uint32_t*)_data.virt;
+            _tx_data_bus = (uint32_t*)_data.bus;
+            _rx_data_virt = (uint8_t*)(_tx_data_virt + 3);
+            _rx_data_bus = (uint8_t*)(_tx_data_bus + 3);
+        }
+
+        _sample_bufs = py::array_t<float>(
+            {_n_channels, _n_samples, 2},
+            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+        );
+    }
+    _sample_bufs[py::ellipsis()] = 0.f;
+
+    _setup_dma_cbs();
 }

@@ -32,7 +32,9 @@ class SerialADC : public ADC {
         void stop_sampling() override;
         void resize(int n_samples) override;
 
-        int n_active_channels() const override { return 1; }
+        int n_active_channels() const override { return _logic_analyzer_mode ? _logic_analyzer_n_bits : 1; }
+
+        void set_logic_analyzer_mode(bool enable, int n_bits = 8) override;
 
     protected:
         uint32_t _spi_flag_bits;
@@ -50,6 +52,10 @@ class SerialADC : public ADC {
         uint32_t* _tx_data_bus = nullptr;
         uint8_t* _rx_data_virt = nullptr;
         uint8_t* _rx_data_bus = nullptr;
+
+        MemPtrs _la_data;
+        uint32_t* _la_rx_data_virt = nullptr;
+        uint32_t* _la_rx_data_bus = nullptr;
 
         const int _dma_chan_0 = 9;
         const int _dma_chan_1 = 10;

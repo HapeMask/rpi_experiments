@@ -32,10 +32,18 @@ public:
     std::pair<float, float> VREF() const { return _VREF; }
     int n_samples() const { return _n_samples; }
 
+    virtual void set_logic_analyzer_mode(bool enable, int n_bits = 8) {
+        _logic_analyzer_mode = enable;
+        _logic_analyzer_n_bits = n_bits;
+    }
+    bool logic_analyzer_mode() const { return _logic_analyzer_mode; }
+
 protected:
     std::pair<float, float> _VREF;
     int _n_samples;
     py::array_t<float> _sample_bufs;
+    bool _logic_analyzer_mode = false;
+    int _logic_analyzer_n_bits = 8;
 
     virtual void _fetch_data() = 0;
 };
