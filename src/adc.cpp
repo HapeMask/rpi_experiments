@@ -101,9 +101,9 @@ void ADC::_finish_la_fetch(float* target) {
     _dma.reset(_la_dma_chan);
     _pwm.stop();
 
-    for (int i = 0; i < _n_samples; ++i) {
-        const uint32_t gpio_word = _la_rx_data_virt[i];
-        for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
+    for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
+        for (int i = 0; i < _n_samples; ++i) {
+            const uint32_t gpio_word = _la_rx_data_virt[i];
             target[bit * _n_samples * 2 + i * 2 + 0] =
                 ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
             target[bit * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
