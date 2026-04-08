@@ -39,7 +39,11 @@ class ParallelADC : public ADC {
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
 
-        void _fetch_data() override;
+        void _start_fetch() override;
+        void _finish_fetch(float* target) override;
+        void _abort_fetch() override;
+        double _get_sample_rate_hz() const override { return _cur_real_sample_rate; }
+
         float _sample_to_float(uint32_t raw_sample) const;
 
         std::vector<bool> _active_channels;

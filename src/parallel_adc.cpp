@@ -41,11 +41,14 @@ ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_chan
 }
 
 ParallelADC::~ParallelADC() {
+    _stop_worker();
     if (_data.vc_handle) _dma._mbox.free_vc_mem(_data);
     if (_la_data.vc_handle) _dma._mbox.free_vc_mem(_la_data);
 }
 
 void ParallelADC::resize(int n_samples) {
+    _stop_worker();
+
     if (_sample_bufs.ndim() == 3 && _sample_bufs.shape(1) == n_samples) {
         _n_samples = n_samples;
         return;
@@ -53,12 +56,12 @@ void ParallelADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
-    int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
+    const int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
     _sample_bufs = py::array_t<float>(
         {n_first_dim, _n_samples, 2},
         {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
     );
-    _sample_bufs[py::ellipsis()] = 0.f;
+    _resize_flat_bufs(n_first_dim, _n_samples);
 
     if (_logic_analyzer_mode) {
         if (_la_data.vc_handle) _dma._mbox.free_vc_mem(_la_data);
@@ -144,6 +147,7 @@ uint32_t ParallelADC::start_sampling(uint32_t sample_rate_hz) {
         _cur_real_sample_rate = sample_rate_hz;
         _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
         _pwm.enable_dma();
+        _start_worker(sample_rate_hz);
         return sample_rate_hz;
     }
 
@@ -154,10 +158,12 @@ uint32_t ParallelADC::start_sampling(uint32_t sample_rate_hz) {
     SMIWidth width = (_highest_active_channel() < 1) ? SMIWidth::_8_BITS : SMIWidth::_16_BITS;
     _smi.setup_device_settings(width, /*device_id=*/0, /*use_dma=*/true);
 
+    _start_worker(_cur_real_sample_rate);
     return _cur_real_sample_rate;
 }
 
 void ParallelADC::stop_sampling() {
+    _stop_worker();
 }
 
 int ParallelADC::_highest_active_channel() const {
@@ -173,6 +179,9 @@ int ParallelADC::_highest_active_channel() const {
 void ParallelADC::toggle_channel(int channel_idx) {
     if (_logic_analyzer_mode) return;
 
+    const bool was_running = _running.load();
+    if (was_running) _stop_worker();
+
     const auto highest_pre = _highest_active_channel();
 
     _active_channels[channel_idx] = !_active_channels[channel_idx];
@@ -185,6 +194,8 @@ void ParallelADC::toggle_channel(int channel_idx) {
     if (_highest_active_channel() != highest_pre) {
         _setup_dma_cbs();
     }
+
+    if (was_running) _start_worker(_cur_real_sample_rate);
 }
 
 int ParallelADC::n_active_channels() const {
@@ -198,12 +209,18 @@ float ParallelADC::_sample_to_float(uint32_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
 }
 
-void ParallelADC::_fetch_data() {
-    auto sbuf = _sample_bufs.mutable_unchecked<3>();
-
+void ParallelADC::_start_fetch() {
     if (_logic_analyzer_mode) {
         _pwm.start();
         _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    } else {
+        _smi.start_xfer(_n_samples, /*packed=*/true);
+        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    }
+}
+
+void ParallelADC::_finish_fetch(float* target) {
+    if (_logic_analyzer_mode) {
         _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
         _dma.reset(_dma_chan_0);
         _pwm.stop();
@@ -211,42 +228,51 @@ void ParallelADC::_fetch_data() {
         for (int i = 0; i < _n_samples; ++i) {
             const uint32_t gpio_word = _la_rx_data_virt[i];
             for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
-                sbuf(bit, i, 0) = ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
-                sbuf(bit, i, 1) = i;
+                target[bit * _n_samples * 2 + i * 2 + 0] =
+                    ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
+                target[bit * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
             }
         }
         return;
     }
 
-    _smi.start_xfer(_n_samples, /*packed=*/true);
-    _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
     _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
     _smi.stop_xfer();
 
     // If only the first channel is active, each uint16_t contains two packed
     // samples, swapped because SMI things (see doc PDF re:XRGB).
     if (_highest_active_channel() == 0) {
-        for (int i=0; i < (_n_samples + 1) / 2; ++i) {
-            sbuf(0, 2 * i + 0, 0) = _sample_to_float((_rx_data_virt[i] >> 8) & 0xff);
-            sbuf(0, 2 * i + 0, 1) = 2 * i + 0;
+        for (int i = 0; i < (_n_samples + 1) / 2; ++i) {
+            target[0 * _n_samples * 2 + (2*i+0) * 2 + 0] =
+                _sample_to_float((_rx_data_virt[i] >> 8) & 0xff);
+            target[0 * _n_samples * 2 + (2*i+0) * 2 + 1] = static_cast<float>(2*i+0);
 
-            if ((2 * i + 1) < _n_samples) {
-                sbuf(0, 2 * i + 1, 0) = _sample_to_float((_rx_data_virt[i] >> 0) & 0xff);
-                sbuf(0, 2 * i + 1, 1) = 2 * i + 1;
+            if ((2*i+1) < _n_samples) {
+                target[0 * _n_samples * 2 + (2*i+1) * 2 + 0] =
+                    _sample_to_float((_rx_data_virt[i] >> 0) & 0xff);
+                target[0 * _n_samples * 2 + (2*i+1) * 2 + 1] = static_cast<float>(2*i+1);
             }
         }
     } else {
-        for (int i=0; i < _n_samples; ++i) {
+        for (int i = 0; i < _n_samples; ++i) {
             for (int ch = 0; ch < _n_channels; ++ch) {
-                if (!_active_channels[ch]) {
-                    continue;
-                }
+                if (!_active_channels[ch]) continue;
                 const uint32_t shift = 8 * ch;
-
-                sbuf(ch, i, 0) = _sample_to_float((_rx_data_virt[i] >> shift) & 0xff);
-                sbuf(ch, i, 1) = i;
+                target[ch * _n_samples * 2 + i * 2 + 0] =
+                    _sample_to_float((_rx_data_virt[i] >> shift) & 0xff);
+                target[ch * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
             }
         }
+    }
+}
+
+void ParallelADC::_abort_fetch() {
+    if (_logic_analyzer_mode) {
+        _pwm.stop();
+        _dma.reset(_dma_chan_0);
+    } else {
+        _smi.stop_xfer();
+        _dma.reset(_dma_chan_0);
     }
 }
 
@@ -254,6 +280,8 @@ void ParallelADC::set_logic_analyzer_mode(bool enable, int n_bits) {
     if (enable && n_bits != 8 && n_bits != 16) {
         throw std::runtime_error("n_bits must be 8 or 16");
     }
+
+    _stop_worker();
 
     // Free any existing logic analyzer buffer
     if (_la_data.vc_handle) {
@@ -275,6 +303,7 @@ void ParallelADC::set_logic_analyzer_mode(bool enable, int n_bits) {
             {n_bits, _n_samples, 2},
             {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
         );
+        _resize_flat_bufs(n_bits, _n_samples);
     } else {
         // Restore normal-mode buffer (re-use existing _data allocation if present)
         if (!_data.vc_handle) {
@@ -287,8 +316,8 @@ void ParallelADC::set_logic_analyzer_mode(bool enable, int n_bits) {
             {_n_channels, _n_samples, 2},
             {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
         );
+        _resize_flat_bufs(_n_channels, _n_samples);
     }
-    _sample_bufs[py::ellipsis()] = 0.f;
 
     _setup_dma_cbs();
 }

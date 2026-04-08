@@ -40,6 +40,8 @@ SerialADC::SerialADC(
 }
 
 SerialADC::~SerialADC() {
+    _stop_worker();
+
     if (_dma._use_vc_mem && _data.vc_handle) {
         _dma._mbox.free_vc_mem(_data);
     } else if (_data.virt) {
@@ -54,6 +56,8 @@ SerialADC::~SerialADC() {
 }
 
 void SerialADC::resize(int n_samples) {
+    _stop_worker();
+
     if (_sample_bufs.ndim() == 3 && _sample_bufs.shape(1) == n_samples) {
         _n_samples = n_samples;
         return;
@@ -61,12 +65,12 @@ void SerialADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
-    int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
+    const int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
     _sample_bufs = py::array_t<float>(
         {n_first_dim, _n_samples, 2},
         {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
     );
-    _sample_bufs[py::ellipsis()] = 0.f;
+    _resize_flat_bufs(n_first_dim, _n_samples);
 
     if (_logic_analyzer_mode) {
         const int n_la_bytes = n_samples * sizeof(uint32_t);
@@ -163,7 +167,7 @@ void SerialADC::_setup_dma_cbs() {
     _tx_data_virt[1] = 0b11111111111111111111111111111111;
 
 
-    // Toggle CS in a loop. 
+    // Toggle CS in a loop.
     cb1.ti = DMATransferInfo{{.wait_for_writes=1, .dest_dma_req=1, .src_addr_incr=0, .peri_map=DMA_PERI_MAP_SPI_TX}}.bits;
     cb1.src = (uint32_t)(uintptr_t)(_tx_data_bus + 2);
     cb1.dst = spi_fifo_bus_addr;
@@ -192,46 +196,41 @@ void SerialADC::_setup_dma_cbs() {
     }
 }
 
-void SerialADC::_run_dma() {
-    _spi.start_dma(4, 8, 4, 8);
-    _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-    _dma.start(_dma_chan_1, /*first_cb_idx=*/2);
-    _dma.wait(_dma_chan_1, _n_samples, 100 * 1000000 / _sample_rate);
-}
-
-void SerialADC::_stop_dma() {
-    _dma.reset(_dma_chan_0);
-    _dma.reset(_dma_chan_1);
-    _dma.disable(_dma_chan_0);
-    _dma.disable(_dma_chan_1);
-    _spi.stop_dma();
-}
-
 uint32_t SerialADC::start_sampling(uint32_t sample_rate_hz) {
     _sample_rate = sample_rate_hz;
 
     if (_logic_analyzer_mode) {
         _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
         _pwm.enable_dma();
+        _start_worker(sample_rate_hz);
         return sample_rate_hz;
     }
     _spi.set_clock(16 * sample_rate_hz);
+    _start_worker(sample_rate_hz);
     return sample_rate_hz;
 }
 
 void SerialADC::stop_sampling() {
+    _stop_worker();
 }
 
 float SerialADC::_sample_to_float(uint32_t raw_sample) const {
     return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 1023.f);
 }
 
-void SerialADC::_fetch_data() {
-    auto sbuf = _sample_bufs.mutable_unchecked<3>();
-
+void SerialADC::_start_fetch() {
     if (_logic_analyzer_mode) {
         _pwm.start();
         _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    } else {
+        _spi.start_dma(4, 8, 4, 8);
+        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+        _dma.start(_dma_chan_1, /*first_cb_idx=*/2);
+    }
+}
+
+void SerialADC::_finish_fetch(float* target) {
+    if (_logic_analyzer_mode) {
         _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _sample_rate);
         _dma.reset(_dma_chan_0);
         _pwm.stop();
@@ -239,24 +238,36 @@ void SerialADC::_fetch_data() {
         for (int i = 0; i < _n_samples; ++i) {
             const uint32_t gpio_word = _la_rx_data_virt[i];
             for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
-                sbuf(bit, i, 0) = ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
-                sbuf(bit, i, 1) = i;
+                target[bit * _n_samples * 2 + i * 2 + 0] =
+                    ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
+                target[bit * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
             }
         }
         return;
     }
 
-    _run_dma();
+    _dma.wait(_dma_chan_1, _n_samples, 100 * 1000000 / _sample_rate);
     _dma.reset(_dma_chan_0);
     _dma.reset(_dma_chan_1);
     _spi.stop_dma();
 
-    for (int i=0; i < _n_samples; ++i) {
-        sbuf(0, i, 0) = _sample_to_float(
+    for (int i = 0; i < _n_samples; ++i) {
+        target[i * 2 + 0] = _sample_to_float(
             ((uint32_t)_rx_data_virt[2 * i + 0] << 4) |
             ((uint32_t)_rx_data_virt[2 * i + 1] >> 4)
         );
-        sbuf(0, i, 1) = i;
+        target[i * 2 + 1] = static_cast<float>(i);
+    }
+}
+
+void SerialADC::_abort_fetch() {
+    if (_logic_analyzer_mode) {
+        _pwm.stop();
+        _dma.reset(_dma_chan_0);
+    } else {
+        _dma.reset(_dma_chan_0);
+        _dma.reset(_dma_chan_1);
+        _spi.stop_dma();
     }
 }
 
@@ -264,6 +275,8 @@ void SerialADC::set_logic_analyzer_mode(bool enable, int n_bits) {
     if (enable && n_bits != 8 && n_bits != 16) {
         throw std::runtime_error("n_bits must be 8 or 16");
     }
+
+    _stop_worker();
 
     // Free any existing logic analyzer buffer
     if (_dma._use_vc_mem && _la_data.vc_handle) {
@@ -294,6 +307,7 @@ void SerialADC::set_logic_analyzer_mode(bool enable, int n_bits) {
             {n_bits, _n_samples, 2},
             {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
         );
+        _resize_flat_bufs(n_bits, _n_samples);
     } else {
         // Restore normal-mode buffer; re-use existing _data allocation if present
         if (!_data.virt) {
@@ -315,8 +329,8 @@ void SerialADC::set_logic_analyzer_mode(bool enable, int n_bits) {
             {_n_channels, _n_samples, 2},
             {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
         );
+        _resize_flat_bufs(_n_channels, _n_samples);
     }
-    _sample_bufs[py::ellipsis()] = 0.f;
 
     _setup_dma_cbs();
 }

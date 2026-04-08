@@ -41,11 +41,13 @@ class SerialADC : public ADC {
         uint32_t _spi_flag_bits;
         uint32_t _sample_rate;
 
-        void _run_dma();
-        void _stop_dma();
         void _setup_dma_cbs();
 
-        void _fetch_data() override;
+        void _start_fetch() override;
+        void _finish_fetch(float* target) override;
+        void _abort_fetch() override;
+        double _get_sample_rate_hz() const override { return _sample_rate; }
+
         float _sample_to_float(uint32_t raw_sample) const;
 
         MemPtrs _data;
