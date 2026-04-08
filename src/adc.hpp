@@ -10,12 +10,17 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
+#include "peripherals/dma/dma.hpp"
+#include "peripherals/gpio/gpio.hpp"
+#include "peripherals/pwm/pwm.hpp"
+#include "utils/reg_mem_utils.hpp"
+
 namespace py = pybind11;
 
 class ADC {
 public:
     ADC(std::pair<float, float> vref, int n_samples) : _VREF(vref), _n_samples(n_samples) {}
-    virtual ~ADC() = default;
+    virtual ~ADC();
 
     virtual uint32_t start_sampling(uint32_t sample_rate_hz) = 0;
     virtual void stop_sampling() = 0;
@@ -35,10 +40,7 @@ public:
     std::pair<float, float> VREF() const { return _VREF; }
     int n_samples() const { return _n_samples; }
 
-    virtual void set_logic_analyzer_mode(bool enable, int n_bits = 8) {
-        _logic_analyzer_mode = enable;
-        _logic_analyzer_n_bits = n_bits;
-    }
+    void set_logic_analyzer_mode(bool enable, int n_bits = 8);
     bool logic_analyzer_mode() const { return _logic_analyzer_mode; }
 
 protected:
@@ -48,31 +50,57 @@ protected:
     bool _logic_analyzer_mode = false;
     int _logic_analyzer_n_bits = 8;
 
+    // Shared hardware peripherals — owned here, used by both subclasses and LA mode.
+    DMA _dma;
+    GPIO _gpio;
+    PWM _pwm{/*use_fifo=*/true};
+    AddressSpaceInfo _asi;
+
+    // LA uses DMA channel 9 (same value as _dma_chan_0 in both subclasses, but
+    // LA and non-LA modes are mutually exclusive so there is no conflict).
+    static constexpr int _la_dma_chan = 9;
+
+    // LA GPIO capture buffer
+    MemPtrs   _la_data;
+    uint32_t* _la_rx_data_virt = nullptr;
+    uint32_t* _la_rx_data_bus  = nullptr;
+
     // Async worker infrastructure
-    std::thread       _worker_thread;
-    std::atomic<bool> _running{false};
-    std::mutex        _buf_mutex;
+    std::thread        _worker_thread;
+    std::atomic<bool>  _running{false};
+    std::mutex         _buf_mutex;
     std::vector<float> _front_data;  // latest completed data, read by get_buffers()
     std::vector<float> _back_data;   // worker writes here during _finish_fetch()
 
-    // Allocates/zeroes both flat buffers to n_channels * n_samples * 2 floats.
     void _resize_flat_bufs(int n_channels, int n_samples);
-
-    // Starts a background worker thread that continuously acquires data.
-    // Stops any existing worker first. rate_hz is used to compute sleep duration.
     void _start_worker(double rate_hz);
-
-    // Signals the worker to stop and blocks until it exits.
     void _stop_worker();
-
     void _worker_loop(double rate_hz);
 
-    // Subclass interface replacing _fetch_data():
-    //   _start_fetch()            — starts DMA hardware (returns immediately)
-    //   _finish_fetch(target)     — waits for DMA completion, unpacks raw bytes
-    //                               into target (flat float[n_ch * n_samples * 2])
-    //   _abort_fetch()            — resets DMA/hardware (called when stopping mid-transfer)
-    //   _get_sample_rate_hz()     — returns current sample rate for sleep calculation
+    // LA buffer helpers
+    void _la_alloc_buf(int n_samples);
+    void _la_free_buf();
+
+    // Set up the pairs of PWM-gated GPIO-read DMA CBs for _n_samples samples.
+    void _setup_la_dma_cbs();
+
+    // Called by subclass start_sampling() in LA mode after the rate is cached.
+    void _la_start_sampling(uint32_t rate_hz);
+
+    // LA fetch steps — called from subclass _start/_finish/_abort_fetch.
+    void _start_la_fetch();
+    void _finish_la_fetch(float* target);
+    void _abort_la_fetch();
+
+    // Re-allocates LA buffer and DMA CBs for a new sample count.
+    // Subclass resize() calls this when _logic_analyzer_mode is true.
+    void _la_resize(int n_samples);
+
+    // Called by set_logic_analyzer_mode(false) so the subclass can restore its
+    // non-LA buffers, _sample_bufs, and DMA CBs.
+    virtual void _on_la_mode_exit() = 0;
+
+    // Subclass data-acquisition interface
     virtual void   _start_fetch() = 0;
     virtual void   _finish_fetch(float* target) = 0;
     virtual void   _abort_fetch() {}

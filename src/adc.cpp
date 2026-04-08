@@ -4,11 +4,151 @@
 #include <cmath>
 #include <chrono>
 
+#include "peripherals/dma/dma_defs.hpp"
+#include "peripherals/gpio/gpio_defs.hpp"
+#include "peripherals/pwm/pwm_defs.hpp"
+
+ADC::~ADC() {
+    _la_free_buf();
+}
+
 void ADC::_resize_flat_bufs(int n_channels, int n_samples) {
     const size_t sz = (size_t)n_channels * n_samples * 2;
     _front_data.assign(sz, 0.f);
     _back_data.assign(sz, 0.f);
 }
+
+// ---- LA buffer management -----------------------------------------------
+
+void ADC::_la_alloc_buf(int n_samples) {
+    const int n_bytes = n_samples * sizeof(uint32_t);
+    if (_dma._use_vc_mem) {
+        _la_data = _dma._mbox.alloc_vc_mem(n_bytes, _asi.page_size);
+    } else {
+        _la_data.virt = alloc_locked_block(n_bytes, _asi.page_size);
+        _la_data.phys = virt_to_phys(_la_data.virt, _asi.page_size);
+        _la_data.bus  = _asi.phys_to_bus(_la_data.phys);
+    }
+    _la_rx_data_virt = (uint32_t*)_la_data.virt;
+    _la_rx_data_bus  = (uint32_t*)_la_data.bus;
+}
+
+void ADC::_la_free_buf() {
+    if (_dma._use_vc_mem && _la_data.vc_handle) {
+        _dma._mbox.free_vc_mem(_la_data);
+    } else if (_la_data.virt) {
+        free(_la_data.virt);
+    }
+    _la_data         = {};
+    _la_rx_data_virt = nullptr;
+    _la_rx_data_bus  = nullptr;
+}
+
+// ---- LA DMA CB setup -------------------------------------------------------
+
+void ADC::_setup_la_dma_cbs() {
+    _dma.resize_cbs(2 * _n_samples);
+
+    const auto gpio_lev0_bus_addr = (uint32_t)(uintptr_t)_gpio.reg_to_bus(GPIO_LVL_OFS);
+    const auto pwm_fifo_bus_addr  = (uint32_t)(uintptr_t)_pwm.reg_to_bus(PWM0_FIF_OFS);
+
+    // Two CBs per sample: cb_pwm waits for PWM DREQ then writes a dummy word to
+    // the PWM FIFO (consuming the token), then cb_gpio immediately reads GPIO.
+    for (int i = 0; i < _n_samples; ++i) {
+        auto& cb_pwm  = _dma.get_cb(2 * i);
+        auto& cb_gpio = _dma.get_cb(2 * i + 1);
+
+        cb_pwm.ti = DMATransferInfo{{
+            .wait_for_writes=1, .dest_dma_req=1,
+            .src_ignore_reads=1, .peri_map=DMA_PERI_MAP_PWM
+        }}.bits;
+        cb_pwm.src     = 0;
+        cb_pwm.dst     = pwm_fifo_bus_addr;
+        cb_pwm.len     = 4;
+        cb_pwm.next_cb = (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 1);
+
+        cb_gpio.ti = DMATransferInfo{{.wait_for_writes=1}}.bits;
+        cb_gpio.src    = gpio_lev0_bus_addr;
+        cb_gpio.dst    = (uint32_t)(uintptr_t)(_la_rx_data_bus + i);
+        cb_gpio.len    = 4;
+        cb_gpio.next_cb = (i < _n_samples - 1)
+            ? (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 2) : 0;
+    }
+}
+
+// ---- LA sampling / fetch ---------------------------------------------------
+
+void ADC::_la_start_sampling(uint32_t rate_hz) {
+    _pwm.setup_clock(0.5f, (float)rate_hz, ClockSource::PLLD);
+    _pwm.enable_dma();
+    _start_worker(rate_hz);
+}
+
+void ADC::_start_la_fetch() {
+    _pwm.start();
+    _dma.start(_la_dma_chan, /*first_cb_idx=*/0);
+}
+
+void ADC::_finish_la_fetch(float* target) {
+    const int rate_hz = static_cast<int>(_get_sample_rate_hz());
+    _dma.wait(_la_dma_chan, _n_samples, 100 * 1000000 / rate_hz);
+    _dma.reset(_la_dma_chan);
+    _pwm.stop();
+
+    for (int i = 0; i < _n_samples; ++i) {
+        const uint32_t gpio_word = _la_rx_data_virt[i];
+        for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
+            target[bit * _n_samples * 2 + i * 2 + 0] =
+                ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
+            target[bit * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
+        }
+    }
+}
+
+void ADC::_abort_la_fetch() {
+    _pwm.stop();
+    _dma.reset(_la_dma_chan);
+}
+
+// ---- LA resize helper ------------------------------------------------------
+
+void ADC::_la_resize(int n_samples) {
+    _la_free_buf();
+    _la_alloc_buf(n_samples);
+    _sample_bufs = py::array_t<float>(
+        {_logic_analyzer_n_bits, n_samples, 2},
+        {n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+    );
+    _resize_flat_bufs(_logic_analyzer_n_bits, n_samples);
+    _setup_la_dma_cbs();
+}
+
+// ---- set_logic_analyzer_mode -----------------------------------------------
+
+void ADC::set_logic_analyzer_mode(bool enable, int n_bits) {
+    if (enable && n_bits != 8 && n_bits != 16)
+        throw std::runtime_error("n_bits must be 8 or 16");
+
+    _stop_worker();
+    _la_free_buf();
+
+    _logic_analyzer_mode    = enable;
+    _logic_analyzer_n_bits  = enable ? n_bits : 8;
+
+    if (enable) {
+        _la_alloc_buf(_n_samples);
+        _sample_bufs = py::array_t<float>(
+            {n_bits, _n_samples, 2},
+            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+        );
+        _resize_flat_bufs(n_bits, _n_samples);
+        _setup_la_dma_cbs();
+    } else {
+        _on_la_mode_exit();
+    }
+}
+
+// ---- worker ----------------------------------------------------------------
 
 void ADC::_start_worker(double rate_hz) {
     _stop_worker();  // join any existing worker before starting a new one

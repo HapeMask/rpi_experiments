@@ -1,23 +1,13 @@
 #pragma once
 #include <vector>
-#include <thread>
-#include <semaphore>
-
 #include <string>
 #include <tuple>
 #include <optional>
 #include <utility>
 
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-namespace py = pybind11;
-
-#include "peripherals/clock/clock.hpp"
-#include "peripherals/dma/dma.hpp"
-#include "peripherals/gpio/gpio.hpp"
-#include "peripherals/pwm/pwm.hpp"
+#include "peripherals/dma/dma_defs.hpp"
 #include "peripherals/smi/smi.hpp"
-#include "utils/reg_mem_utils.hpp"
+#include "utils/rpi_zero_2.hpp"
 
 #include "adc.hpp"
 
@@ -33,8 +23,6 @@ class ParallelADC : public ADC {
 
         int n_active_channels() const override;
 
-        void set_logic_analyzer_mode(bool enable, int n_bits = 8) override;
-
     protected:
         uint32_t _cur_real_sample_rate = 0;
         int _n_channels = 0;
@@ -43,6 +31,7 @@ class ParallelADC : public ADC {
         void _finish_fetch(float* target) override;
         void _abort_fetch() override;
         double _get_sample_rate_hz() const override { return _cur_real_sample_rate; }
+        void _on_la_mode_exit() override;
 
         float _sample_to_float(uint32_t raw_sample) const;
 
@@ -51,19 +40,11 @@ class ParallelADC : public ADC {
 
         void _setup_dma_cbs();
 
-        MemPtrs _data;
+        MemPtrs   _data;
         uint16_t* _rx_data_virt = nullptr;
-        uint16_t* _rx_data_bus = nullptr;
+        uint16_t* _rx_data_bus  = nullptr;
 
-        MemPtrs _la_data;
-        uint32_t* _la_rx_data_virt = nullptr;
-        uint32_t* _la_rx_data_bus = nullptr;
-
-        DMA _dma;
-        PWM _pwm{/*use_fifo=*/true};
         SMI _smi;
-        GPIO _gpio;
-        AddressSpaceInfo _asi;
 
         const int _dma_chan_0 = 9;
 };

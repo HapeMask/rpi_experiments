@@ -33,7 +33,7 @@ ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_chan
     // TODO: Add the remaining 8 lines when we have 2 channels for real.
 
     _active_channels.resize(n_channels);
-    for (int ch=0; ch < n_channels; ++ch) {
+    for (int ch = 0; ch < n_channels; ++ch) {
         _active_channels[ch] = false;
     }
 
@@ -43,7 +43,7 @@ ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_chan
 ParallelADC::~ParallelADC() {
     _stop_worker();
     if (_data.vc_handle) _dma._mbox.free_vc_mem(_data);
-    if (_la_data.vc_handle) _dma._mbox.free_vc_mem(_la_data);
+    // _la_data is freed by ~ADC()
 }
 
 void ParallelADC::resize(int n_samples) {
@@ -56,73 +56,39 @@ void ParallelADC::resize(int n_samples) {
 
     _n_samples = n_samples;
 
-    const int n_first_dim = _logic_analyzer_mode ? _logic_analyzer_n_bits : _n_channels;
+    if (_logic_analyzer_mode) {
+        _la_resize(n_samples);
+        return;
+    }
+
+    if (_data.vc_handle) _dma._mbox.free_vc_mem(_data);
+    _data = _dma._mbox.alloc_vc_mem(n_samples * sizeof(uint16_t), _asi.page_size);
+    _rx_data_virt = (uint16_t*)_data.virt;
+    _rx_data_bus  = (uint16_t*)_data.bus;
+
     _sample_bufs = py::array_t<float>(
-        {n_first_dim, _n_samples, 2},
+        {_n_channels, _n_samples, 2},
         {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
     );
-    _resize_flat_bufs(n_first_dim, _n_samples);
-
-    if (_logic_analyzer_mode) {
-        if (_la_data.vc_handle) _dma._mbox.free_vc_mem(_la_data);
-        _la_data = _dma._mbox.alloc_vc_mem(n_samples * sizeof(uint32_t), _asi.page_size);
-        _la_rx_data_virt = (uint32_t*)_la_data.virt;
-        _la_rx_data_bus = (uint32_t*)_la_data.bus;
-    } else {
-        if (_data.vc_handle) _dma._mbox.free_vc_mem(_data);
-        _data = _dma._mbox.alloc_vc_mem(n_samples * sizeof(uint16_t), _asi.page_size);
-        _rx_data_virt = (uint16_t*)_data.virt;
-        _rx_data_bus = (uint16_t*)_data.bus;
-    }
+    _resize_flat_bufs(_n_channels, _n_samples);
 
     _setup_dma_cbs();
 }
 
 void ParallelADC::_setup_dma_cbs() {
-    if (_logic_analyzer_mode) {
-        _dma.resize_cbs(2 * _n_samples);
-
-        auto gpio_lev0_bus_addr = (uint32_t)(uintptr_t)_gpio.reg_to_bus(GPIO_LVL_OFS);
-        auto pwm_fifo_bus_addr = (uint32_t)(uintptr_t)_pwm.reg_to_bus(PWM0_FIF_OFS);
-
-        // Pairs of CBs per sample: cb_pwm waits for PWM DREQ then writes to FIFO
-        // (consuming the DREQ token), then cb_gpio immediately reads GPIO.
-        for (int i = 0; i < _n_samples; ++i) {
-            auto& cb_pwm  = _dma.get_cb(2 * i);
-            auto& cb_gpio = _dma.get_cb(2 * i + 1);
-
-            cb_pwm.ti = DMATransferInfo{{
-                .wait_for_writes=1, .dest_dma_req=1,
-                .src_ignore_reads=1, .peri_map=DMA_PERI_MAP_PWM
-            }}.bits;
-            cb_pwm.src = 0;
-            cb_pwm.dst = pwm_fifo_bus_addr;
-            cb_pwm.len = 4;
-            cb_pwm.next_cb = (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 1);
-
-            cb_gpio.ti = DMATransferInfo{{.wait_for_writes=1}}.bits;
-            cb_gpio.src = gpio_lev0_bus_addr;
-            cb_gpio.dst = (uint32_t)(uintptr_t)(_la_rx_data_bus + i);
-            cb_gpio.len = 4;
-            cb_gpio.next_cb = (i < _n_samples - 1) ?
-                (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(2 * i + 2) : 0;
-        }
-        return;
-    }
+    // LA mode is handled entirely by _setup_la_dma_cbs() in the base class.
+    // This function only handles the SMI path.
 
     _dma.resize_cbs(1);
     auto& cb0 = _dma.get_cb(0);
 
-    bool use_8bit = (_highest_active_channel() == 0);
+    const bool use_8bit = (_highest_active_channel() == 0);
     int bytes_to_xfer = use_8bit ?
         (_n_samples * sizeof(uint8_t)) :
         (_n_samples * sizeof(uint16_t));
 
-    // If only one channel is active (and thus 2 8-bit samples are packed into
-    // each 16-bit element), we have to make sure DMA reads an even number of
-    // bytes. This is because SMI will pack the last sample into the upper 8
-    // bits of the last 16-bit element. If DMA only reads the requested
-    // number of bytes, it will miss the last sample.
+    // SMI packs the last odd 8-bit sample into the upper byte of a 16-bit word,
+    // so we must transfer an even number of bytes.
     if (use_8bit) {
         bytes_to_xfer += (bytes_to_xfer % 2);
     }
@@ -133,7 +99,7 @@ void ParallelADC::_setup_dma_cbs() {
         );
     }
 
-    auto smi_data_bus_addr = (uint32_t)(uintptr_t)_smi.reg_to_bus(SMI_DATA_OFS);
+    const auto smi_data_bus_addr = (uint32_t)(uintptr_t)_smi.reg_to_bus(SMI_DATA_OFS);
 
     cb0.ti = DMATransferInfo{{.dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SMI}}.bits;
     cb0.src = smi_data_bus_addr;
@@ -145,9 +111,7 @@ void ParallelADC::_setup_dma_cbs() {
 uint32_t ParallelADC::start_sampling(uint32_t sample_rate_hz) {
     if (_logic_analyzer_mode) {
         _cur_real_sample_rate = sample_rate_hz;
-        _pwm.setup_clock(0.5f, (float)sample_rate_hz, ClockSource::PLLD);
-        _pwm.enable_dma();
-        _start_worker(sample_rate_hz);
+        _la_start_sampling(sample_rate_hz);
         return sample_rate_hz;
     }
 
@@ -167,13 +131,11 @@ void ParallelADC::stop_sampling() {
 }
 
 int ParallelADC::_highest_active_channel() const {
-    int highest_active_channel = -1;
-    for (int i=0; i < _n_channels; ++i) {
-        if (_active_channels[i]) {
-            highest_active_channel = i;
-        }
+    int highest = -1;
+    for (int i = 0; i < _n_channels; ++i) {
+        if (_active_channels[i]) highest = i;
     }
-    return highest_active_channel;
+    return highest;
 }
 
 void ParallelADC::toggle_channel(int channel_idx) {
@@ -189,8 +151,6 @@ void ParallelADC::toggle_channel(int channel_idx) {
     SMIWidth width = (_highest_active_channel() < 1) ? SMIWidth::_8_BITS : SMIWidth::_16_BITS;
     _smi.setup_device_settings(width, /*device_id=*/0, /*use_dma=*/true);
 
-    // If we changed SMI read width because of the channel change, we need to
-    // also reset the DMA CBs to read the new number of total bytes.
     if (_highest_active_channel() != highest_pre) {
         _setup_dma_cbs();
     }
@@ -210,37 +170,20 @@ float ParallelADC::_sample_to_float(uint32_t raw_sample) const {
 }
 
 void ParallelADC::_start_fetch() {
-    if (_logic_analyzer_mode) {
-        _pwm.start();
-        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-    } else {
-        _smi.start_xfer(_n_samples, /*packed=*/true);
-        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
-    }
+    if (_logic_analyzer_mode) { _start_la_fetch(); return; }
+
+    _smi.start_xfer(_n_samples, /*packed=*/true);
+    _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
 }
 
 void ParallelADC::_finish_fetch(float* target) {
-    if (_logic_analyzer_mode) {
-        _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
-        _dma.reset(_dma_chan_0);
-        _pwm.stop();
-
-        for (int i = 0; i < _n_samples; ++i) {
-            const uint32_t gpio_word = _la_rx_data_virt[i];
-            for (int bit = 0; bit < _logic_analyzer_n_bits; ++bit) {
-                target[bit * _n_samples * 2 + i * 2 + 0] =
-                    ((gpio_word >> (8 + bit)) & 1) ? 1.0f : 0.0f;
-                target[bit * _n_samples * 2 + i * 2 + 1] = static_cast<float>(i);
-            }
-        }
-        return;
-    }
+    if (_logic_analyzer_mode) { _finish_la_fetch(target); return; }
 
     _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
     _smi.stop_xfer();
 
     // If only the first channel is active, each uint16_t contains two packed
-    // samples, swapped because SMI things (see doc PDF re:XRGB).
+    // samples, swapped because of SMI XRGB packing (see SMI doc PDF).
     if (_highest_active_channel() == 0) {
         for (int i = 0; i < (_n_samples + 1) / 2; ++i) {
             target[0 * _n_samples * 2 + (2*i+0) * 2 + 0] =
@@ -267,57 +210,23 @@ void ParallelADC::_finish_fetch(float* target) {
 }
 
 void ParallelADC::_abort_fetch() {
-    if (_logic_analyzer_mode) {
-        _pwm.stop();
-        _dma.reset(_dma_chan_0);
-    } else {
-        _smi.stop_xfer();
-        _dma.reset(_dma_chan_0);
-    }
+    if (_logic_analyzer_mode) { _abort_la_fetch(); return; }
+
+    _smi.stop_xfer();
+    _dma.reset(_dma_chan_0);
 }
 
-void ParallelADC::set_logic_analyzer_mode(bool enable, int n_bits) {
-    if (enable && n_bits != 8 && n_bits != 16) {
-        throw std::runtime_error("n_bits must be 8 or 16");
+void ParallelADC::_on_la_mode_exit() {
+    // Re-allocate the SMI receive buffer if it was freed when LA mode was entered.
+    if (!_data.vc_handle) {
+        _data = _dma._mbox.alloc_vc_mem(_n_samples * sizeof(uint16_t), _asi.page_size);
+        _rx_data_virt = (uint16_t*)_data.virt;
+        _rx_data_bus  = (uint16_t*)_data.bus;
     }
-
-    _stop_worker();
-
-    // Free any existing logic analyzer buffer
-    if (_la_data.vc_handle) {
-        _dma._mbox.free_vc_mem(_la_data);
-        _la_data = {};
-        _la_rx_data_virt = nullptr;
-        _la_rx_data_bus = nullptr;
-    }
-
-    _logic_analyzer_mode = enable;
-    _logic_analyzer_n_bits = enable ? n_bits : 8;
-
-    if (enable) {
-        _la_data = _dma._mbox.alloc_vc_mem(_n_samples * sizeof(uint32_t), _asi.page_size);
-        _la_rx_data_virt = (uint32_t*)_la_data.virt;
-        _la_rx_data_bus = (uint32_t*)_la_data.bus;
-
-        _sample_bufs = py::array_t<float>(
-            {n_bits, _n_samples, 2},
-            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-        );
-        _resize_flat_bufs(n_bits, _n_samples);
-    } else {
-        // Restore normal-mode buffer (re-use existing _data allocation if present)
-        if (!_data.vc_handle) {
-            _data = _dma._mbox.alloc_vc_mem(_n_samples * sizeof(uint16_t), _asi.page_size);
-            _rx_data_virt = (uint16_t*)_data.virt;
-            _rx_data_bus = (uint16_t*)_data.bus;
-        }
-
-        _sample_bufs = py::array_t<float>(
-            {_n_channels, _n_samples, 2},
-            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-        );
-        _resize_flat_bufs(_n_channels, _n_samples);
-    }
-
+    _sample_bufs = py::array_t<float>(
+        {_n_channels, _n_samples, 2},
+        {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
+    );
+    _resize_flat_bufs(_n_channels, _n_samples);
     _setup_dma_cbs();
 }
