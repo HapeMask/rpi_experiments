@@ -192,6 +192,7 @@ void ADC::_worker_loop(double rate_hz) {
             std::lock_guard<std::mutex> lock(_buf_mutex);
             std::swap(_front_data, _back_data);
         }
+        ++_front_gen;
 
         _start_fetch();  // immediately queue next transfer
     }

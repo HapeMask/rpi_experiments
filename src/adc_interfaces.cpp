@@ -33,7 +33,8 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
              py::arg("enable"),
              py::arg("n_bits")=8
         )
-        .def_property_readonly("logic_analyzer_mode", &ADC::logic_analyzer_mode);
+        .def_property_readonly("logic_analyzer_mode", &ADC::logic_analyzer_mode)
+        .def_property_readonly("data_generation", &ADC::data_generation);
 
     py::class_<SerialADC, ADC>(m, "SerialADC")
         .def(

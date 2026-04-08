@@ -39,6 +39,7 @@ public:
 
     std::pair<float, float> VREF() const { return _VREF; }
     int n_samples() const { return _n_samples; }
+    uint64_t data_generation() const { return _front_gen.load(); }
 
     void set_logic_analyzer_mode(bool enable, int n_bits = 8);
     bool logic_analyzer_mode() const { return _logic_analyzer_mode; }
@@ -69,6 +70,7 @@ protected:
     std::thread        _worker_thread;
     std::atomic<bool>  _running{false};
     std::mutex         _buf_mutex;
+    std::atomic<uint64_t> _front_gen{0};
     std::vector<float> _front_data;  // latest completed data, read by get_buffers()
     std::vector<float> _back_data;   // worker writes here during _finish_fetch()
 

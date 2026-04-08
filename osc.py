@@ -102,6 +102,8 @@ class Oscilloscope(QApplication):
         self.graph_antialias_factor = graph_antialias_factor
         self.la_mode = False
         self.osc_lines = []
+        self._last_gen = None
+        self._cached_timestamps = None
 
         self.update_interval_sec = 1 / update_fps
 
@@ -317,6 +319,7 @@ class Oscilloscope(QApplication):
 
     def _recreate_plot_lines(self):
         """Clear and recreate plot lines for the current number of active channels."""
+        self._cached_timestamps = None
         self.graph.clear()
         n_ch = self.adc.n_active_channels()
         dummy = np.zeros(max(self.adc.n_samples, 1), np.float32)
@@ -335,6 +338,7 @@ class Oscilloscope(QApplication):
         self.adc.resize(n_samples)
         self.adc_sample_rate = self.adc.start_sampling(self.adc_sample_rate)
         self._recreate_plot_lines()
+        self._cached_timestamps = None
 
         self.sample_buffer_input.blockSignals(True)
         self.sample_buffer_input.setCurrentIndex(buffer_size_idx)
@@ -349,6 +353,7 @@ class Oscilloscope(QApplication):
             raise KeyError(f"Sample rate {sample_rate} not found in dropdown.")
 
         self.adc_sample_rate = self.adc.start_sampling(sample_rate)
+        self._cached_timestamps = None
 
         self.sample_rate_input.blockSignals(True)
         self.sample_rate_input.setCurrentIndex(sample_rate_idx)
@@ -486,15 +491,15 @@ class Oscilloscope(QApplication):
         # shape: [n_ch, n_binned, 2] — last dim is [value, sample_idx]
         samples, timestamps = buffers[..., 0], buffers[..., 1]
 
-        # All channels share the same time axis; use channel 0's timestamps.
-        timestamps = timestamps[0] / self.adc_sample_rate
+        if self._cached_timestamps is None:
+            self._cached_timestamps = timestamps[0] / self.adc_sample_rate
+        timestamps = self._cached_timestamps
 
         if triggered and trig_start is not None:
-            # trig_start is a bin index into the unsliced buffer; adjust for the
-            # bins we removed from the front.
+            # trig_start is a bin index into the unsliced buffer. Adjust for
+            # the bins we removed from the front.
             adjusted_trig = trig_start - bin_cut_idx
-            if 0 <= adjusted_trig < timestamps.shape[0]:
-                timestamps -= timestamps[adjusted_trig]
+            timestamps = timestamps - timestamps[adjusted_trig]
 
         # samples shape: [n_ch, n_binned]
         return samples, timestamps, triggered
@@ -502,6 +507,11 @@ class Oscilloscope(QApplication):
     def plot_callback(self):
         if self.paused or self.adc.n_active_channels() < 1:
             return
+
+        current_gen = self.adc.data_generation
+        if current_gen == self._last_gen:
+            return
+        self._last_gen = current_gen
 
         samples, timestamps, triggered = self.sample_osc()
 
