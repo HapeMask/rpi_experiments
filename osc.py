@@ -29,14 +29,14 @@ from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
-AVAILABLE_BUFFER_SIZES = [int(2 ** size_exp) for size_exp in range(9, 16)]
-AVAILABLE_BUFFER_SIZES[-1:] = [32767]
+AVAILABLE_BUFFER_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32767, 65535, 131072, 262144]
 
 # Colors for oscilloscope channels (Ch0, Ch1, ...)
 CHANNEL_COLORS = ["#33ee66", "#00aeff", "#ff6633", "#ffdd00", "#cc44ff", "#ff88aa"]
 
-# In LA mode: max buffer size (DMA len is 16-bit; 16384*4=65536 overflows)
-LA_MAX_SAMPLES = 16383
+# In LA mode: practical limit based on CB memory (2 CBs * 32 bytes per sample).
+# 65535 samples = ~4 MB of CB memory, which is comfortable on an RPi.
+LA_MAX_SAMPLES = 65535
 
 
 def sample_rate_to_msps_str(sample_rate):
@@ -367,11 +367,7 @@ class Oscilloscope(QApplication):
         self.adc.toggle_channel(channel_idx)
 
         # >=50MS/s is only available in single-channel mode (only Ch. 0 active)
-        # for now due to memory bandwidth limitations. If we have more than 1
-        # channel active, remove all higher sample rates and switch to 20MS/s
-        # if one was selected. Similar to the above logic, if we are in
-        # single-channel mode we can support up to 32767 samples. Otherwise, at
-        # most 16384.
+        # due to SMI memory bandwidth limitations.
         n_active_channels = self.adc.n_active_channels()
         ch0_active = self.channel_toggles[0].isChecked()
         is_single_channel_mode = (n_active_channels == 1 and ch0_active)
@@ -379,45 +375,32 @@ class Oscilloscope(QApplication):
         sample_rates = self.sample_rates
         buffer_sizes = AVAILABLE_BUFFER_SIZES
 
-        if is_single_channel_mode:
-            # Add back any previously-removed options.
-            self.sample_rate_input.blockSignals(True)
-            self.sample_buffer_input.blockSignals(True)
+        self.sample_rate_input.blockSignals(True)
+        self.sample_buffer_input.blockSignals(True)
 
+        if is_single_channel_mode:
+            # Restore all options that may have been removed.
             for rate in sample_rates:
                 if self.sample_rate_input.findData(rate) < 0:
                     self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
-
+            for size in buffer_sizes:
+                if self.sample_buffer_input.findData(size) < 0:
+                    self.sample_buffer_input.addItem(str(size), size)
+        else:
+            # Remove sample rates >=50MS/s (not supported in dual-channel mode).
+            for idx in range(self.sample_rate_input.count() - 1, -1, -1):
+                if self.sample_rate_input.itemData(idx) >= int(50e6):
+                    self.sample_rate_input.removeItem(idx)
+            # Restore any buffer sizes that were previously removed.
             for size in buffer_sizes:
                 if self.sample_buffer_input.findData(size) < 0:
                     self.sample_buffer_input.addItem(str(size), size)
 
-            self.sample_rate_input.blockSignals(False)
-            self.sample_buffer_input.blockSignals(False)
-        else:
-            self.sample_rate_input.blockSignals(True)
-            self.sample_buffer_input.blockSignals(True)
+        self.sample_rate_input.blockSignals(False)
+        self.sample_buffer_input.blockSignals(False)
 
-            for idx in range(self.sample_rate_input.count() - 1, -1, -1):
-                if self.sample_rate_input.itemData(idx) >= int(50e6):
-                    self.sample_rate_input.removeItem(idx)
-
-            for idx in range(self.sample_buffer_input.count() - 1, -1, -1):
-                if self.sample_buffer_input.itemData(idx) >= 32767:
-                    self.sample_buffer_input.removeItem(idx)
-
-            self.sample_rate_input.blockSignals(False)
-            self.sample_buffer_input.blockSignals(False)
-
-            # If we were sampling at >=50MS/s, drop down to 20Ms/s.
-            if self.adc_sample_rate >= int(50e6):
-                self.set_sample_rate(int(20e6))
-
-            # If we had a buffer size larger than the limit, pick the new
-            # largest allowed.
-            if self.adc.n_samples >= 32767:
-                self.resize_sample_buffer(16384)
-                return  # resize_sample_buffer already calls _recreate_plot_lines
+        if not is_single_channel_mode and self.adc_sample_rate >= int(50e6):
+            self.set_sample_rate(int(20e6))
 
         self._recreate_plot_lines()
 

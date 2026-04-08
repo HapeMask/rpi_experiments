@@ -30,8 +30,10 @@ class SerialADC : public ADC {
     protected:
         uint32_t _spi_flag_bits;
         uint32_t _sample_rate;
+        int _samples_per_seg = 0;  // max samples per SPI transaction (≤ 32767)
 
         void _setup_dma_cbs();
+        void _advance_spi_segment(int seg_idx);
         void _on_la_mode_exit() override;
 
         void _start_fetch() override;

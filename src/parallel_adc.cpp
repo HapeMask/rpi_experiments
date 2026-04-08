@@ -61,8 +61,11 @@ void ParallelADC::resize(int n_samples) {
         return;
     }
 
+    // Allocate enough for the worst-case transfer size (16-bit / dual-channel).
+    // _setup_dma_cbs() computes the exact byte count based on current mode.
+    const int alloc_bytes = n_samples * sizeof(uint16_t);
     if (_data.vc_handle) _dma._mbox.free_vc_mem(_data);
-    _data = _dma._mbox.alloc_vc_mem(n_samples * sizeof(uint16_t), _asi.page_size);
+    _data = _dma._mbox.alloc_vc_mem(alloc_bytes, _asi.page_size);
     _rx_data_virt = (uint16_t*)_data.virt;
     _rx_data_bus  = (uint16_t*)_data.bus;
 
@@ -75,12 +78,13 @@ void ParallelADC::resize(int n_samples) {
     _setup_dma_cbs();
 }
 
+// Maximum bytes transferred per DMA CB (must fit in the 16-bit len field,
+// and must be an even number so 8-bit packed pairs stay aligned).
+static constexpr int DMA_MAX_CB_BYTES = 65534;
+
 void ParallelADC::_setup_dma_cbs() {
     // LA mode is handled entirely by _setup_la_dma_cbs() in the base class.
     // This function only handles the SMI path.
-
-    _dma.resize_cbs(1);
-    auto& cb0 = _dma.get_cb(0);
 
     const bool use_8bit = (_highest_active_channel() == 0);
     int bytes_to_xfer = use_8bit ?
@@ -88,24 +92,31 @@ void ParallelADC::_setup_dma_cbs() {
         (_n_samples * sizeof(uint16_t));
 
     // SMI packs the last odd 8-bit sample into the upper byte of a 16-bit word,
-    // so we must transfer an even number of bytes.
-    if (use_8bit) {
-        bytes_to_xfer += (bytes_to_xfer % 2);
-    }
+    // so we must transfer an even number of bytes total.
+    if (use_8bit) bytes_to_xfer += (bytes_to_xfer % 2);
 
-    if (bytes_to_xfer > 65536) {
-        throw std::runtime_error(
-            "Requested too many samples for a single DMA transaction. Max: 65535 bytes."
-        );
-    }
+    // Chain as many CBs as needed; each CB transfers at most DMA_MAX_CB_BYTES.
+    const int n_cbs = (bytes_to_xfer + DMA_MAX_CB_BYTES - 1) / DMA_MAX_CB_BYTES;
+    _dma.resize_cbs(n_cbs);
 
     const auto smi_data_bus_addr = (uint32_t)(uintptr_t)_smi.reg_to_bus(SMI_DATA_OFS);
+    const uint32_t ti = DMATransferInfo{{.dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SMI}}.bits;
 
-    cb0.ti = DMATransferInfo{{.dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SMI}}.bits;
-    cb0.src = smi_data_bus_addr;
-    cb0.dst = (uint32_t)(uintptr_t)_rx_data_bus;
-    cb0.len = bytes_to_xfer;
-    cb0.next_cb = 0;
+    int rem = bytes_to_xfer;
+    uint8_t* dst_bus = (uint8_t*)_rx_data_bus;
+    for (int i = 0; i < n_cbs; ++i) {
+        auto& cb  = _dma.get_cb(i);
+        const int chunk = std::min(DMA_MAX_CB_BYTES, rem);
+
+        cb.ti      = ti;
+        cb.src     = smi_data_bus_addr;
+        cb.dst     = (uint32_t)(uintptr_t)dst_bus;
+        cb.len     = chunk;
+        cb.next_cb = (i < n_cbs - 1)
+            ? (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(i + 1) : 0;
+        dst_bus += chunk;
+        rem     -= chunk;
+    }
 }
 
 uint32_t ParallelADC::start_sampling(uint32_t sample_rate_hz) {
@@ -160,6 +171,7 @@ void ParallelADC::toggle_channel(int channel_idx) {
 
 int ParallelADC::n_active_channels() const {
     if (_logic_analyzer_mode) return _logic_analyzer_n_bits;
+
     int n_act = 0;
     for (const auto& act : _active_channels) { n_act += int(act); }
     return n_act;
@@ -170,16 +182,21 @@ float ParallelADC::_sample_to_float(uint32_t raw_sample) const {
 }
 
 void ParallelADC::_start_fetch() {
-    if (_logic_analyzer_mode) { _start_la_fetch(); return; }
-
-    _smi.start_xfer(_n_samples, /*packed=*/true);
-    _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    if (_logic_analyzer_mode) {
+        _start_la_fetch();
+    } else {
+        _smi.start_xfer(_n_samples, /*packed=*/true);
+        _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    }
 }
 
 void ParallelADC::_finish_fetch(float* target) {
-    if (_logic_analyzer_mode) { _finish_la_fetch(target); return; }
+    if (_logic_analyzer_mode) {
+        _finish_la_fetch(target);
+        return;
+    }
 
-    _dma.wait(_dma_chan_0, _n_samples, 100 * 1000000 / _cur_real_sample_rate);
+    _dma.wait(_dma_chan_0, _n_samples, 1 * 1000000 / _cur_real_sample_rate);
     _smi.stop_xfer();
 
     // If only the first channel is active, each uint16_t contains two packed
@@ -210,7 +227,10 @@ void ParallelADC::_finish_fetch(float* target) {
 }
 
 void ParallelADC::_abort_fetch() {
-    if (_logic_analyzer_mode) { _abort_la_fetch(); return; }
+    if (_logic_analyzer_mode) {
+        _abort_la_fetch();
+        return;
+    }
 
     _smi.stop_xfer();
     _dma.reset(_dma_chan_0);

@@ -91,15 +91,18 @@ void SerialADC::resize(int n_samples) {
     _setup_dma_cbs();
 }
 
+// Maximum samples per SPI transaction (SPI DL field is 16-bit; 2 bytes/sample).
+static constexpr int SPI_MAX_SAMPLES_PER_SEG = 32767;
+
 void SerialADC::_setup_dma_cbs() {
     // LA mode is handled entirely by _setup_la_dma_cbs() in the base class.
     // This function only handles the SPI path.
 
-    const int n_rx_cbs = ((2 * _n_samples) + (_rx_block_size - 1)) / _rx_block_size;
-
-    if ((2 * _n_samples) & 0xffff0000) {
-        throw std::runtime_error("Requested too many samples for a single DMA transaction. Max: 32767");
-    }
+    // Each SPI transaction is limited to SPI_MAX_SAMPLES_PER_SEG samples by the
+    // 16-bit DL field. Larger captures use multiple sequential transactions; the
+    // CBs here cover one segment.
+    _samples_per_seg = std::min(SPI_MAX_SAMPLES_PER_SEG, _n_samples);
+    const int n_rx_cbs = (2 * _samples_per_seg + _rx_block_size - 1) / _rx_block_size;
 
     _dma.resize_cbs(2 + n_rx_cbs);
 
@@ -110,41 +113,75 @@ void SerialADC::_setup_dma_cbs() {
 
     // CB0: write SPI control word (byte count + mode bits) and initial CS state.
     cb0.ti = DMATransferInfo{{.wait_for_writes=1, .dest_dma_req=1, .src_addr_incr=1, .peri_map=DMA_PERI_MAP_SPI_TX}}.bits;
-    cb0.src = (uint32_t)(uintptr_t)_tx_data_bus;
-    cb0.dst = spi_fifo_bus_addr;
-    cb0.len = 4 + 4;
+    cb0.src     = (uint32_t)(uintptr_t)_tx_data_bus;
+    cb0.dst     = spi_fifo_bus_addr;
+    cb0.len     = 4 + 4;
     cb0.next_cb = (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(1);
 
     _tx_data_virt[0] = (
-        (2 * _n_samples) << 16
+        (2 * _samples_per_seg) << 16
         | (SPIControlStatus{{.clk_pha=1, .xfer_active=1}}.bits & 0xff)
     );
     _tx_data_virt[1] = 0b11111111111111111111111111111111;
 
     // CB1: toggle CS in a loop to pace the transfer.
     cb1.ti = DMATransferInfo{{.wait_for_writes=1, .dest_dma_req=1, .src_addr_incr=0, .peri_map=DMA_PERI_MAP_SPI_TX}}.bits;
-    cb1.src = (uint32_t)(uintptr_t)(_tx_data_bus + 2);
-    cb1.dst = spi_fifo_bus_addr;
-    cb1.len = 4;
+    cb1.src     = (uint32_t)(uintptr_t)(_tx_data_bus + 2);
+    cb1.dst     = spi_fifo_bus_addr;
+    cb1.len     = 4;
     cb1.next_cb = (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(1);
 
     _tx_data_virt[2] = 0b00000001000000000000000100000000;
 
-    // CB2+: chain RX CBs to capture incoming bytes.
+    // CB2+: chain RX CBs to capture the first segment's bytes.
     uint8_t* cur_rx_ptr = _rx_data_bus;
-    int rx_bytes_rem = 2 * _n_samples;
+    int rx_bytes_rem = 2 * _samples_per_seg;
     for (int i = 2; i < 2 + n_rx_cbs; ++i) {
-        auto& cbi = _dma.get_cb(i);
-        cbi.ti = DMATransferInfo{{.wait_for_writes=1, .dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SPI_RX}}.bits;
-        cbi.src = spi_fifo_bus_addr;
-        cbi.dst = (uint32_t)(uintptr_t)cur_rx_ptr;
-        cbi.len = std::min(_rx_block_size, rx_bytes_rem);
+        auto& cbi  = _dma.get_cb(i);
+        cbi.ti     = DMATransferInfo{{.wait_for_writes=1, .dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SPI_RX}}.bits;
+        cbi.src    = spi_fifo_bus_addr;
+        cbi.dst    = (uint32_t)(uintptr_t)cur_rx_ptr;
+        cbi.len    = std::min(_rx_block_size, rx_bytes_rem);
         cbi.next_cb = (i < (n_rx_cbs + 2 - 1))
             ? (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(i + 1) : 0;
 
-        cur_rx_ptr  += _rx_block_size;
+        cur_rx_ptr   += _rx_block_size;
         rx_bytes_rem -= _rx_block_size;
     }
+}
+
+// Update the TX control word and RX CB destinations for the given segment index,
+// then restart both DMA channels. Called between segments in _finish_fetch().
+void SerialADC::_advance_spi_segment(int seg_idx) {
+    const int offset_samps = seg_idx * _samples_per_seg;
+    const int seg_samps    = std::min(_samples_per_seg, _n_samples - offset_samps);
+    const int n_rx_cbs     = (2 * seg_samps + _rx_block_size - 1) / _rx_block_size;
+
+    // Update SPI byte count for this segment.
+    _tx_data_virt[0] = (
+        (2 * seg_samps) << 16
+        | (SPIControlStatus{{.clk_pha=1, .xfer_active=1}}.bits & 0xff)
+    );
+    // Flush TX word from CPU cache if not using GPU-coherent memory.
+    if (!_dma._use_vc_mem) {
+        clean_cache(_data.virt, (uint8_t*)_data.virt + _asi.cache_line_size, _asi.cache_line_size);
+    }
+
+    // Repoint RX CBs to the correct offset in the receive buffer.
+    uint8_t* rx_start_bus = _rx_data_bus + (size_t)offset_samps * 2;
+    int rx_bytes_rem      = 2 * seg_samps;
+    for (int i = 2; i < 2 + n_rx_cbs; ++i) {
+        auto& cbi   = _dma.get_cb(i);
+        cbi.dst     = (uint32_t)(uintptr_t)(rx_start_bus + (size_t)(i - 2) * _rx_block_size);
+        cbi.len     = std::min(_rx_block_size, rx_bytes_rem);
+        cbi.next_cb = (i < (n_rx_cbs + 2 - 1))
+            ? (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(i + 1) : 0;
+        rx_bytes_rem -= _rx_block_size;
+    }
+
+    _spi.start_dma(4, 8, 4, 8);
+    _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
+    _dma.start(_dma_chan_1, /*first_cb_idx=*/2);
 }
 
 uint32_t SerialADC::start_sampling(uint32_t sample_rate_hz) {
@@ -179,10 +216,19 @@ void SerialADC::_start_fetch() {
 void SerialADC::_finish_fetch(float* target) {
     if (_logic_analyzer_mode) { _finish_la_fetch(target); return; }
 
-    _dma.wait(_dma_chan_1, _n_samples, 100 * 1000000 / _sample_rate);
-    _dma.reset(_dma_chan_0);
-    _dma.reset(_dma_chan_1);
-    _spi.stop_dma();
+    // Collect one or more SPI segments, each up to SPI_MAX_SAMPLES_PER_SEG samples.
+    const int n_segs = (_n_samples + _samples_per_seg - 1) / _samples_per_seg;
+    for (int seg = 0; seg < n_segs; ++seg) {
+        const int seg_samps = std::min(_samples_per_seg, _n_samples - seg * _samples_per_seg);
+        _dma.wait(_dma_chan_1, seg_samps, 100 * 1000000 / _sample_rate);
+        _dma.reset(_dma_chan_0);
+        _dma.reset(_dma_chan_1);
+        _spi.stop_dma();
+
+        if (seg + 1 < n_segs) {
+            _advance_spi_segment(seg + 1);
+        }
+    }
 
     for (int i = 0; i < _n_samples; ++i) {
         target[i * 2 + 0] = _sample_to_float(
