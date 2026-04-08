@@ -435,7 +435,13 @@ class Oscilloscope(QApplication):
             max_allowed = self.sample_buffer_input.itemData(self.sample_buffer_input.count() - 1)
             self.resize_sample_buffer(max_allowed)
         else:
+            self.resize_sample_buffer(self.adc.n_samples)
             self._recreate_plot_lines()
+
+        if self.la_mode:
+            self.adc.stop_sampling()
+        else:
+            self.adc_sample_rate = self.adc.start_sampling(self.adc_sample_rate)
 
         self.update_trig_line_visibility()
         self.reset_graph_range()
