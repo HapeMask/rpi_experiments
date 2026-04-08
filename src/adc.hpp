@@ -17,6 +17,12 @@
 
 namespace py = pybind11;
 
+enum class TrigMode {
+    NONE,
+    RISING_EDGE,
+    FALLING_EDGE
+};
+
 class ADC {
 public:
     ADC(std::pair<float, float> vref, int n_samples) : _VREF(vref), _n_samples(n_samples) {}
@@ -33,7 +39,7 @@ public:
         bool auto_range = false,
         float low_thresh = 0.5,
         float high_thresh = 2.5,
-        std::string trig_mode = "rising_edge",
+        TrigMode trig_mode = TrigMode::RISING_EDGE,
         int skip_samples = 0
     );
 

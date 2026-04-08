@@ -23,7 +23,7 @@ from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
 
-from adc_interfaces import ParallelADC, SerialADC
+from adc_interfaces import ParallelADC, SerialADC, TrigMode
 from peripheral_interfaces import get_spi_flag_bits
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
@@ -205,9 +205,9 @@ class Oscilloscope(QApplication):
         right_box.addStretch(1)
         right_box.addWidget(trig_gbox)
 
-        trig_rising_radio.mode = "rising_edge"
-        trig_falling_radio.mode = "falling_edge"
-        trig_none_radio.mode = "none"
+        trig_rising_radio.mode = TrigMode.RISING_EDGE
+        trig_falling_radio.mode = TrigMode.FALLING_EDGE
+        trig_none_radio.mode = TrigMode.NONE
 
         trig_bgrp.buttonClicked.connect(self.trig_button_callback)
 
@@ -281,7 +281,7 @@ class Oscilloscope(QApplication):
         self.trig_line_label.setAcceptHoverEvents(False)
         self.trig_line_label.textItem.setAcceptHoverEvents(False)
 
-        self.trig_mode = "rising_edge"
+        self.trig_mode = TrigMode.RISING_EDGE
         self.update_trig_line_visibility()
         self.paused = False
 
@@ -450,7 +450,7 @@ class Oscilloscope(QApplication):
         visible = (
             (not self.la_mode)
             and (not self.trig_auto_checkbox.isChecked())
-            and (self.trig_mode != "none")
+            and (self.trig_mode != TrigMode.NONE)
             and self.show_trig_line_checkbox.isChecked()
         )
         self.trig_line.setVisible(visible)
@@ -463,7 +463,7 @@ class Oscilloscope(QApplication):
         high_thresh = 2.5
         use_trig_line = (
             (not self.trig_auto_checkbox.isChecked())
-            and (self.trig_mode != "none")
+            and (self.trig_mode != TrigMode.NONE)
         )
         if use_trig_line:
             low_thresh = self.trig_line.value()

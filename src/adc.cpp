@@ -205,7 +205,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
     bool auto_range,
     float low_thresh,
     float high_thresh,
-    std::string trig_mode,
+    TrigMode trig_mode,
     int skip_samples
 ) {
     if (skip_samples < 0) skip_samples = 0;
@@ -238,7 +238,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
     bool triggered = false;
     std::optional<int> trig_start = std::nullopt;
 
-    if (trig_mode != "none") {
+    if (trig_mode != TrigMode::NONE) {
         const int ch = 0;
         float low  = low_thresh;
         float high = high_thresh;
@@ -259,13 +259,13 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
             high = mean_val + 0.2f * range;
         }
 
-        if (trig_mode == "rising_edge") {
+        if (trig_mode == TrigMode::RISING_EDGE) {
             for (int i = skip_samples; i < n_samp; ++i) {
                 const float v = at(ch, i, 0);
                 if (v < low) trig_start = i;
                 if (v >= high && trig_start.has_value()) { triggered = true; break; }
             }
-        } else if (trig_mode == "falling_edge") {
+        } else if (trig_mode == TrigMode::FALLING_EDGE) {
             for (int i = skip_samples; i < n_samp; ++i) {
                 const float v = at(ch, i, 0);
                 if (v > high) trig_start = i;

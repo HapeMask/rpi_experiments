@@ -13,13 +13,19 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
         "Module exposing ADC classes (SerialADC, ParallelADC)."
     );
 
+    py::enum_<TrigMode>(m, "TrigMode")
+        .value("NONE", TrigMode::NONE)
+        .value("RISING_EDGE", TrigMode::RISING_EDGE)
+        .value("FALLING_EDGE", TrigMode::FALLING_EDGE)
+        .export_values();
+
     py::class_<ADC>(m, "ADC")
         .def("get_buffers", &ADC::get_buffers,
              py::arg("screen_width"),
              py::arg("auto_range")=false,
              py::arg("low_thresh")=0.5f,
              py::arg("high_thresh")=2.5f,
-             py::arg("trig_mode")="rising_edge",
+             py::arg("trig_mode")=TrigMode::RISING_EDGE,
              py::arg("skip_samples")=0
         )
         .def_property("VREF", &ADC::VREF, nullptr)
