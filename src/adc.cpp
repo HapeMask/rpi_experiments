@@ -47,9 +47,7 @@ void ADC::_worker_loop(double rate_hz) {
             std::swap(_front_data, _back_data);
         }
 
-        if (_running) {
-            _start_fetch();  // immediately queue next transfer
-        }
+        _start_fetch();  // immediately queue next transfer
     }
 
     _abort_fetch();  // stop any DMA that was started but not yet collected

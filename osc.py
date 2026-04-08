@@ -333,6 +333,7 @@ class Oscilloscope(QApplication):
             raise KeyError(f"Sample count {n_samples} not found in dropdown.")
 
         self.adc.resize(n_samples)
+        self.adc_sample_rate = self.adc.start_sampling(self.adc_sample_rate)
         self._recreate_plot_lines()
 
         self.sample_buffer_input.blockSignals(True)
@@ -493,7 +494,11 @@ class Oscilloscope(QApplication):
             skip_samples=sample_cut_idx,
         )
 
-        buffers = buffers[:, sample_cut_idx:]
+        # Convert raw-sample skip count to bins, since get_buffers returns a
+        # binned buffer where one bin may cover many raw samples.
+        n_bins = buffers.shape[1]
+        bin_cut_idx = int(sample_cut_idx * n_bins / self.adc.n_samples)
+        buffers = buffers[:, bin_cut_idx:]
 
         # shape: [n_ch, n_binned, 2] — last dim is [value, sample_idx]
         samples, timestamps = buffers[..., 0], buffers[..., 1]
@@ -502,7 +507,11 @@ class Oscilloscope(QApplication):
         timestamps = timestamps[0] / self.adc_sample_rate
 
         if triggered and trig_start is not None:
-            timestamps -= timestamps[trig_start]
+            # trig_start is a bin index into the unsliced buffer; adjust for the
+            # bins we removed from the front.
+            adjusted_trig = trig_start - bin_cut_idx
+            if 0 <= adjusted_trig < timestamps.shape[0]:
+                timestamps -= timestamps[adjusted_trig]
 
         # samples shape: [n_ch, n_binned]
         return samples, timestamps, triggered
@@ -541,7 +550,7 @@ def main():
         sample_rates = [int(v * 1e6) for v in [0.5, 1, 1.5, 2]]
     else:
         init_sample_rate = int(5e6)
-        adc = ParallelADC(VREF=(-5.0, 5.0), n_samples=16384)
+        adc = ParallelADC(VREF=(-8.75, 8.75), n_samples=16384)
         sample_rates = AVAILABLE_SAMPLE_RATES
 
     print("Setting up app...")
