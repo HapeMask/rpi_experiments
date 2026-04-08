@@ -149,7 +149,7 @@ void SMI::setup_device_settings(SMIWidth xfer_width_bits, uint32_t device_id, bo
     if (use_dma) {
         _dma_ctl_reg->bits = SMIDMAControl{{
             .dma_req_thresh_write=4,
-            .dma_req_thresh_read=1,
+            .dma_req_thresh_read=4,
             .panic_write=8,
             .panic_read=8,
             .dma_enable=1

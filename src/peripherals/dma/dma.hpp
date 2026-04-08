@@ -20,7 +20,7 @@ class DMA : public Peripheral {
         void disable(int channel) const;
         bool error(int channel) const;
         void start(int channel, int first_cb_idx) const;
-        void wait(int channel, int max_retries=1000, int delay_us=100) const;
+        bool wait(int channel, int max_retries=10, int delay_us=100) const;
 
         DMAControlBlock& get_cb(size_t i);
         const DMAControlBlock& get_cb(size_t i) const;

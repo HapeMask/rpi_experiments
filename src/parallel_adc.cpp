@@ -95,27 +95,36 @@ void ParallelADC::_setup_dma_cbs() {
     // so we must transfer an even number of bytes total.
     if (use_8bit) bytes_to_xfer += (bytes_to_xfer % 2);
 
-    // Chain as many CBs as needed; each CB transfers at most DMA_MAX_CB_BYTES.
     const int n_cbs = (bytes_to_xfer + DMA_MAX_CB_BYTES - 1) / DMA_MAX_CB_BYTES;
     _dma.resize_cbs(n_cbs);
+
+    // Distribute bytes evenly across all CBs so no CB is tiny. A tiny last CB
+    // misses SMI DREQ: by the time the DMA loads it, the SMI transfer count has
+    // reached 0 and DREQ is deasserted. Rounding up to even keeps 16-bit pairs
+    // aligned across CB boundaries.
+    const int max_chunk_size = ((bytes_to_xfer + n_cbs - 1) / n_cbs + 1) & ~1;
 
     const auto smi_data_bus_addr = (uint32_t)(uintptr_t)_smi.reg_to_bus(SMI_DATA_OFS);
     const uint32_t ti = DMATransferInfo{{.dest_addr_incr=1, .src_dma_req=1, .peri_map=DMA_PERI_MAP_SMI}}.bits;
 
-    int rem = bytes_to_xfer;
+    int remaining = bytes_to_xfer;
     uint8_t* dst_bus = (uint8_t*)_rx_data_bus;
     for (int i = 0; i < n_cbs; ++i) {
         auto& cb  = _dma.get_cb(i);
-        const int chunk = std::min(DMA_MAX_CB_BYTES, rem);
+        const int chunk_size = std::min(max_chunk_size, remaining);
 
         cb.ti      = ti;
         cb.src     = smi_data_bus_addr;
         cb.dst     = (uint32_t)(uintptr_t)dst_bus;
-        cb.len     = chunk;
-        cb.next_cb = (i < n_cbs - 1)
-            ? (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(i + 1) : 0;
-        dst_bus += chunk;
-        rem     -= chunk;
+        cb.len     = chunk_size;
+        cb.next_cb = (
+            (i < n_cbs - 1) ?
+            (uint32_t)(uintptr_t)_dma.get_cb_bus_ptr(i + 1)
+            : 0
+        );
+
+        dst_bus     += chunk_size;
+        remaining   -= chunk_size;
     }
 }
 
@@ -196,7 +205,12 @@ void ParallelADC::_finish_fetch(float* target) {
         return;
     }
 
-    _dma.wait(_dma_chan_0, _n_samples, 1 * 1000000 / _cur_real_sample_rate);
+    // Break up the wait into chunks to balance sleeping vs. finishing on time.
+    _dma.wait(
+        _dma_chan_0,
+        16,
+        std::max(1000000 * _n_samples / (8 * _cur_real_sample_rate), 1u)
+    );
     _smi.stop_xfer();
 
     // If only the first channel is active, each uint16_t contains two packed

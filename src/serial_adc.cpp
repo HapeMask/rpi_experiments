@@ -206,7 +206,10 @@ float SerialADC::_sample_to_float(uint32_t raw_sample) const {
 }
 
 void SerialADC::_start_fetch() {
-    if (_logic_analyzer_mode) { _start_la_fetch(); return; }
+    if (_logic_analyzer_mode) {
+        _start_la_fetch();
+        return;
+    }
 
     _spi.start_dma(4, 8, 4, 8);
     _dma.start(_dma_chan_0, /*first_cb_idx=*/0);
@@ -214,13 +217,22 @@ void SerialADC::_start_fetch() {
 }
 
 void SerialADC::_finish_fetch(float* target) {
-    if (_logic_analyzer_mode) { _finish_la_fetch(target); return; }
+    if (_logic_analyzer_mode) {
+        _finish_la_fetch(target);
+        return;
+    }
 
     // Collect one or more SPI segments, each up to SPI_MAX_SAMPLES_PER_SEG samples.
     const int n_segs = (_n_samples + _samples_per_seg - 1) / _samples_per_seg;
     for (int seg = 0; seg < n_segs; ++seg) {
         const int seg_samps = std::min(_samples_per_seg, _n_samples - seg * _samples_per_seg);
-        _dma.wait(_dma_chan_1, seg_samps, 100 * 1000000 / _sample_rate);
+        // Break up the wait into chunks to balance sleeping vs. finishing on time.
+        _dma.wait(
+            _dma_chan_1,
+            16,
+            std::max(1000000 * seg_samps / (8 * _sample_rate), 1u)
+        );
+
         _dma.reset(_dma_chan_0);
         _dma.reset(_dma_chan_1);
         _spi.stop_dma();
@@ -240,7 +252,10 @@ void SerialADC::_finish_fetch(float* target) {
 }
 
 void SerialADC::_abort_fetch() {
-    if (_logic_analyzer_mode) { _abort_la_fetch(); return; }
+    if (_logic_analyzer_mode) {
+        _abort_la_fetch();
+        return;
+    }
 
     _dma.reset(_dma_chan_0);
     _dma.reset(_dma_chan_1);

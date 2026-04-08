@@ -91,7 +91,13 @@ void ADC::_start_la_fetch() {
 
 void ADC::_finish_la_fetch(float* target) {
     const int rate_hz = static_cast<int>(_get_sample_rate_hz());
-    _dma.wait(_la_dma_chan, _n_samples, 100 * 1000000 / rate_hz);
+    // Break up the wait into chunks to balance sleeping vs. finishing on time.
+    _dma.wait(
+        _la_dma_chan,
+        16,
+        std::max(1000000 * _n_samples / (8 * rate_hz), 1)
+    );
+
     _dma.reset(_la_dma_chan);
     _pwm.stop();
 
@@ -204,9 +210,11 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
     if (skip_samples < 0) skip_samples = 0;
 
     const int n_samp = _n_samples;
-    const int n_ch_stored = (n_samp > 0 && !_front_data.empty())
-        ? static_cast<int>(_front_data.size() / (static_cast<size_t>(n_samp) * 2))
-        : 0;
+    const int n_ch_stored = (
+        (n_samp > 0 && !_front_data.empty()) ?
+        static_cast<int>(_front_data.size() / (static_cast<size_t>(n_samp) * 2))
+        : 0
+    );
 
     if (skip_samples >= n_samp || n_ch_stored == 0 || n_active_channels() == 0) {
         return {py::array_t<float>({n_ch_stored, screen_width, 2}), false, std::nullopt};
@@ -220,7 +228,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
         snap = _front_data;
     }
 
-    // Flat accessor: layout is [ch * n_samp * 2 + i * 2 + field]
+    // Flat accessor for shape [n_ch, n_samp, 2]
     auto at = [&](int ch, int i, int field) -> float {
         return snap[static_cast<size_t>(ch) * n_samp * 2 + i * 2 + field];
     };

@@ -144,16 +144,27 @@ void DMA::start(int channel, int first_cb_idx) const {
     _cs_regs[channel]->flags.active = 1;
 }
 
-void DMA::wait(int channel, int max_retries, int delay_us) const {
+bool DMA::wait(int channel, int max_retries, int delay_us) const {
     for(int i=0; i < max_retries; ++i) {
-        if (_cs_regs[channel]->flags.active == 0 && (*_len_regs[channel]) == 0) {
-            return;
+        // Only check active; TXFR_LEN may retain a stale non-zero value after
+        // a multi-CB chain completes even though the transfer is done.
+        if (_cs_regs[channel]->flags.active == 0) {
+            return true;
         }
+
         std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
     }
 
-    std::ostringstream ss;
-    ss << "DMA::wait() timed out. Bytes remaining: ";
-    ss << (*_len_regs[channel]);
-    throw std::runtime_error(ss.str());
+    const bool success = (_cs_regs[channel]->flags.active == 0);
+
+#ifdef DEBUG
+    if (!success) {
+        std::ostringstream ss;
+        ss << "DMA::wait() timed out. Bytes remaining: ";
+        ss << (*_len_regs[channel]);
+        throw std::runtime_error(ss.str());
+    }
+#endif
+
+    return success;
 }
