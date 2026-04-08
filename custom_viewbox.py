@@ -47,11 +47,11 @@ def get_si_prefixes(val: float) -> Tuple[str, str, float]:
 def format_dVdt(dV: float, dt: float) -> str:
     freq = 0 if dt == 0 else 1 / dt
     v_prefix, _, v_scale = get_si_prefixes(dV)
-    p_prefix, f_prefix, t_scale = get_si_prefixes(dt)
+    f_prefix, p_prefix, t_scale = get_si_prefixes(freq)
 
     return (
         f"dV: {dV / v_scale:0.3f} {v_prefix}V\n"
-        f"dt: {dt / t_scale:0.3f} {p_prefix}s ({freq / t_scale:0.3f} {f_prefix}Hz)"
+        f"dt: {dt * t_scale:0.3f} {p_prefix}s ({freq / t_scale:0.3f} {f_prefix}Hz)"
     )
 
 
