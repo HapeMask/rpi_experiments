@@ -146,14 +146,34 @@ void ADC::set_logic_analyzer_mode(bool enable, int n_bits) {
     _stop_worker();
     _la_free_buf();
 
-    _logic_analyzer_mode    = enable;
-    _logic_analyzer_n_bits  = enable ? n_bits : 8;
+    _logic_analyzer_mode = enable;
+    _logic_analyzer_n_bits = n_bits;
 
     if (enable) {
+        _gpio.push_regs();
+
+        _gpio.set_mode(8, GPIOMode::IN);
+        _gpio.set_mode(9, GPIOMode::IN);
+        _gpio.set_mode(10, GPIOMode::IN);
+        _gpio.set_mode(11, GPIOMode::IN);
+        _gpio.set_mode(12, GPIOMode::IN);
+        _gpio.set_mode(13, GPIOMode::IN);
+        _gpio.set_mode(14, GPIOMode::IN);
+        _gpio.set_mode(15, GPIOMode::IN);
+        _gpio.set_mode(16, GPIOMode::IN);
+        _gpio.set_mode(17, GPIOMode::IN);
+        _gpio.set_mode(18, GPIOMode::IN);
+        _gpio.set_mode(19, GPIOMode::IN);
+        _gpio.set_mode(20, GPIOMode::IN);
+        _gpio.set_mode(21, GPIOMode::IN);
+        _gpio.set_mode(22, GPIOMode::IN);
+        _gpio.set_mode(23, GPIOMode::IN);
+
         _la_alloc_buf(_n_samples);
         _resize_flat_bufs(n_bits, _n_samples);
         _setup_la_dma_cbs();
     } else {
+        _gpio.pop_regs();
         _on_la_mode_exit();
     }
 }
