@@ -23,9 +23,10 @@ SerialADC::SerialADC(
     uint32_t spi_flag_bits,
     std::pair<float, float> vref,
     int n_samples,
+    int n_channels,
     int rx_block_size
 ):
-    ADC(vref, n_samples),
+    ADC(vref, n_samples, n_channels),
     _spi_flag_bits(spi_flag_bits),
     _rx_block_size(rx_block_size),
     _spi(8000000, {.bits=spi_flag_bits})

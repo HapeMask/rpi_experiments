@@ -8,6 +8,17 @@
 #include "peripherals/gpio/gpio_defs.hpp"
 #include "peripherals/pwm/pwm_defs.hpp"
 
+ADC::ADC(std::pair<float, float> vref, int n_samples, int n_channels) :
+    _VREF(vref),
+    _n_samples(n_samples),
+    _n_channels(n_channels)
+{
+    _active_channels.resize(n_channels);
+    for (int ch = 0; ch < n_channels; ++ch) {
+        _active_channels[ch] = false;
+    }
+}
+
 ADC::~ADC() {
     _la_free_buf();
 }
@@ -223,15 +234,15 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
 
     // Snapshot the latest completed buffer. Hold the lock only for the copy so
     // the worker can swap its next completed buffer while we process this one.
-    std::vector<float> snap;
+    std::vector<float> samples;
     {
         std::lock_guard<std::mutex> lock(_buf_mutex);
-        snap = _front_data;
+        samples = _front_data;
     }
 
     // Flat accessor for shape [n_ch, n_samp, 2]
     auto at = [&](int ch, int i, int field) -> float {
-        return snap[static_cast<size_t>(ch) * n_samp * 2 + i * 2 + field];
+        return samples[static_cast<size_t>(ch) * n_samp * 2 + i * 2 + field];
     };
 
     // Trigger logic (channel 0 only)
@@ -304,4 +315,8 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
     }
 
     return {binned_bufs, triggered, binned_trig_start};
+}
+
+bool ADC::channel_active(int ch) const {
+    return _active_channels[ch];
 }

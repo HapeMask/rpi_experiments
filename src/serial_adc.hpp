@@ -16,6 +16,7 @@ class SerialADC : public ADC {
             uint32_t spi_flag_bits,
             std::pair<float, float> vref,
             int n_samples=16384,
+            int n_channels=1,
             int rx_block_size=32768
         );
         virtual ~SerialADC();

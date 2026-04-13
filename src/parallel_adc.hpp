@@ -13,7 +13,7 @@
 
 class ParallelADC : public ADC {
     public:
-        ParallelADC(std::pair<float, float> vref, int n_samples=16384, int n_channels=2);
+        ParallelADC(std::pair<float, float> vref, int n_samples=16384, int n_channels=2, int bit_format=1);
         virtual ~ParallelADC();
 
         uint32_t start_sampling(uint32_t sample_rate_hz) override;
@@ -25,7 +25,7 @@ class ParallelADC : public ADC {
 
     protected:
         uint32_t _cur_real_sample_rate = 0;
-        int _n_channels = 0;
+        int _bit_format;
 
         void _start_fetch() override;
         void _finish_fetch(float* target) override;
@@ -33,9 +33,8 @@ class ParallelADC : public ADC {
         double _get_sample_rate_hz() const override { return _cur_real_sample_rate; }
         void _on_la_mode_exit() override;
 
-        float _sample_to_float(uint32_t raw_sample) const;
+        float _sample_to_float(uint8_t raw_sample) const;
 
-        std::vector<bool> _active_channels;
         int _highest_active_channel() const;
 
         void _setup_dma_cbs();

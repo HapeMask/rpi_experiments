@@ -124,7 +124,7 @@ uint32_t SMI::setup_timing(uint32_t tgt_sample_rate, ClockSource clk_src) {
 }
 
 void SMI::setup_device_settings(SMIWidth xfer_width_bits, uint32_t device_id, bool use_dma) {
-    if (_strobe_clks < 1 || _hold_clks < 1 || _setup_clks < 1) {
+    if ((_setup_clks + _strobe_clks + _hold_clks) < 2) {
         throw std::runtime_error(
             "setup_device_settings() called before setup_timing()."
         );

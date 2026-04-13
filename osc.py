@@ -23,7 +23,8 @@ from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
 
-from adc_interfaces import ParallelADC, SerialADC, TrigMode
+from adc_interfaces import TrigMode
+from adcs import ADC3908, ADC1175, SerialADC
 from peripheral_interfaces import get_spi_flag_bits
 from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
@@ -103,7 +104,6 @@ class Oscilloscope(QApplication):
         self.la_mode = False
         self.osc_lines = []
         self._last_gen = None
-        self._cached_timestamps = None
 
         self.update_interval_sec = 1 / update_fps
 
@@ -319,7 +319,6 @@ class Oscilloscope(QApplication):
 
     def _recreate_plot_lines(self):
         """Clear and recreate plot lines for the current number of active channels."""
-        self._cached_timestamps = None
         self.graph.clear()
         n_ch = self.adc.n_active_channels()
         dummy = np.zeros(max(self.adc.n_samples, 1), np.float32)
@@ -338,7 +337,6 @@ class Oscilloscope(QApplication):
         self.adc.resize(n_samples)
         self.adc_sample_rate = self.adc.start_sampling(self.adc_sample_rate)
         self._recreate_plot_lines()
-        self._cached_timestamps = None
 
         self.sample_buffer_input.blockSignals(True)
         self.sample_buffer_input.setCurrentIndex(buffer_size_idx)
@@ -353,7 +351,6 @@ class Oscilloscope(QApplication):
             raise KeyError(f"Sample rate {sample_rate} not found in dropdown.")
 
         self.adc_sample_rate = self.adc.start_sampling(sample_rate)
-        self._cached_timestamps = None
 
         self.sample_rate_input.blockSignals(True)
         self.sample_rate_input.setCurrentIndex(sample_rate_idx)
@@ -365,8 +362,11 @@ class Oscilloscope(QApplication):
             n_ch = self.adc.n_active_channels()
             self.graph.setYRange(-0.25, n_ch)
         else:
-            vref = self.adc.VREF
-            self.graph.setYRange(vref[0], vref[1])
+            # Pick the biggest FSR across channels based on gain/bias. TODO:
+            # Can / should we have separate scales for each channel? Seems
+            # confusing.
+            fsr = self.adc.fullscale_range()
+            self.graph.setYRange(fsr[0::2].min(), fsr[1::2].max())
 
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
@@ -462,8 +462,12 @@ class Oscilloscope(QApplication):
         self.trig_line.setVisible(visible)
 
     def sample_osc(self):
-        # TODO: Hack. Things get less reliable for early samples at high sample rates.
-        sample_cut_idx = int(10e-6 * self.adc_sample_rate)
+        if isinstance(self.adc, ADC1175):
+            # TODO: Hack. Things get less reliable for early samples at high sample
+            # rates with this ADC.
+            skip_samples = int(10e-6 * self.adc_sample_rate)
+        else:
+            skip_samples = 0
 
         low_thresh = 0.5
         high_thresh = 2.5
@@ -485,21 +489,21 @@ class Oscilloscope(QApplication):
             low_thresh=low_thresh,
             high_thresh=high_thresh,
             trig_mode=self.trig_mode,
-            skip_samples=sample_cut_idx,
+            skip_samples=skip_samples,
         )
 
         # Convert raw-sample skip count to bins, since get_buffers returns a
         # binned buffer where one bin may cover many raw samples.
         n_bins = buffers.shape[1]
-        bin_cut_idx = int(sample_cut_idx * n_bins / self.adc.n_samples)
+        bin_cut_idx = int(skip_samples * n_bins / self.adc.n_samples)
         buffers = buffers[:, bin_cut_idx:]
 
         # shape: [n_ch, n_binned, 2] — last dim is [value, sample_idx]
         samples, timestamps = buffers[..., 0], buffers[..., 1]
 
-        if self._cached_timestamps is None:
-            self._cached_timestamps = timestamps[0] / self.adc_sample_rate
-        timestamps = self._cached_timestamps
+        # TODO: Maybe cache but need to handle slicing better w.r.t. changing
+        # timestamp size and sample buffer size.
+        timestamps = timestamps[0] / self.adc_sample_rate
 
         if triggered and trig_start is not None:
             # trig_start is a bin index into the unsliced buffer. Adjust for
@@ -508,6 +512,8 @@ class Oscilloscope(QApplication):
             timestamps = timestamps - timestamps[adjusted_trig]
 
         # samples shape: [n_ch, n_binned]
+        samples = self.adc.scale_samples(samples)
+
         return samples, timestamps, triggered
 
     def plot_callback(self):
@@ -545,12 +551,19 @@ def main():
     if "-s" in sys.argv:
         sys.argv.remove("-s")
         init_sample_rate = int(1e6)
-        adc = SerialADC(get_spi_flag_bits(clk_pha=1), VREF=(0, 3.3), n_samples=2048)
         sample_rates = [int(v * 1e6) for v in [0.5, 1, 1.5, 2]]
+
+        adc = SerialADC(get_spi_flag_bits(clk_pha=1), VREF=(0, 3.3), n_samples=2048)
     else:
         init_sample_rate = int(5e6)
-        adc = ParallelADC(VREF=(-8.75, 8.75), n_samples=16384)
         sample_rates = AVAILABLE_SAMPLE_RATES
+
+        # For old scope
+        #adc = ADC1175()
+
+        # For new scope
+        adc = ADC3908()
+        adc.update_dac()
 
     print("Setting up app...")
     pg.setConfigOptions(antialias=True)

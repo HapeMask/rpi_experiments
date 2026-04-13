@@ -25,7 +25,7 @@ enum class TrigMode {
 
 class ADC {
 public:
-    ADC(std::pair<float, float> vref, int n_samples) : _VREF(vref), _n_samples(n_samples) {}
+    ADC(std::pair<float, float> vref, int n_samples, int n_channels);
     virtual ~ADC();
 
     virtual uint32_t start_sampling(uint32_t sample_rate_hz) = 0;
@@ -33,6 +33,7 @@ public:
     virtual void resize(int n_samples) = 0;
     virtual void toggle_channel(int channel_idx) = 0;
     virtual int n_active_channels() const = 0;
+    bool channel_active(int ch) const;
 
     virtual std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
         int screen_width,
@@ -45,6 +46,7 @@ public:
 
     std::pair<float, float> VREF() const { return _VREF; }
     int n_samples() const { return _n_samples; }
+    int n_channels() const { return _n_channels; }
     uint64_t data_generation() const { return _front_gen.load(); }
 
     void set_logic_analyzer_mode(bool enable, int n_bits = 8);
@@ -53,6 +55,10 @@ public:
 protected:
     std::pair<float, float> _VREF;
     int _n_samples;
+    int _n_channels;
+    std::vector<bool> _active_channels;
+
+    // TODO: use this again and not the weird flat accessor helper thing.
     py::array_t<float> _sample_bufs;  // used only for the resize() shape check
     bool _logic_analyzer_mode = false;
     int _logic_analyzer_n_bits = 8;

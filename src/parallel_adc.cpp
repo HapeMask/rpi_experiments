@@ -9,13 +9,48 @@
 #include "utils/rpi_zero_2.hpp"
 
 
-ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_channels) :
-    ADC(vref, n_samples),
-    _n_channels(n_channels)
+ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_channels, int bit_format) :
+    ADC(vref, n_samples, n_channels),
+    _bit_format(bit_format)
 {
     if (n_channels < 1 || n_channels > 2) {
         throw std::runtime_error("Only 1 or 2 channels are supported.");
     }
+
+    // Atten
+    _gpio.set_mode(24, GPIOMode::OUT);
+    _gpio.set_mode(25, GPIOMode::OUT);
+
+    // Reset
+    _gpio.set_mode(26, GPIOMode::OUT);
+
+    // Initialize ADC
+    _gpio.clear_pin(24);
+    _gpio.clear_pin(25);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    _gpio.set_pin(24);
+    _gpio.set_pin(25);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    //_gpio.clear_pin(24);
+    //_gpio.clear_pin(25);
+
+    _gpio.set_mode(6, GPIOMode::OUT);
+
+    _gpio.clear_pin(26);
+    for(int i=0; i<4000; ++i) {
+        _gpio.set_pin(6);
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+        _gpio.clear_pin(6);
+
+        if (i > 10) {
+            _gpio.set_pin(26);
+        }
+
+        if (i > 100) {
+            _gpio.clear_pin(26);
+        }
+    }
+
 
     // Clock
     _gpio.set_mode(6, GPIOMode::ALT_1);
@@ -29,13 +64,14 @@ ParallelADC::ParallelADC(std::pair<float, float> vref, int n_samples, int n_chan
     _gpio.set_mode(13, GPIOMode::ALT_1);
     _gpio.set_mode(14, GPIOMode::ALT_1);
     _gpio.set_mode(15, GPIOMode::ALT_1);
-
-    // TODO: Add the remaining 8 lines when we have 2 channels for real.
-
-    _active_channels.resize(n_channels);
-    for (int ch = 0; ch < n_channels; ++ch) {
-        _active_channels[ch] = false;
-    }
+    _gpio.set_mode(16, GPIOMode::ALT_1);
+    _gpio.set_mode(17, GPIOMode::ALT_1);
+    _gpio.set_mode(18, GPIOMode::ALT_1);
+    _gpio.set_mode(19, GPIOMode::ALT_1);
+    _gpio.set_mode(20, GPIOMode::ALT_1);
+    _gpio.set_mode(21, GPIOMode::ALT_1);
+    _gpio.set_mode(22, GPIOMode::ALT_1);
+    _gpio.set_mode(23, GPIOMode::ALT_1);
 
     resize(n_samples);
 }
@@ -186,8 +222,12 @@ int ParallelADC::n_active_channels() const {
     return n_act;
 }
 
-float ParallelADC::_sample_to_float(uint32_t raw_sample) const {
-    return _VREF.first + (_VREF.second - _VREF.first) * ((float)raw_sample / 255.f);
+float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
+    const float sample_0_1 = (_bit_format == 0) ?
+        ((float)raw_sample / 255.f) :
+        (0.5f + 0.5f * (float)std::bit_cast<int8_t>(raw_sample) / 128.f);
+
+    return _VREF.first + (_VREF.second - _VREF.first) * sample_0_1;
 }
 
 void ParallelADC::_start_fetch() {
