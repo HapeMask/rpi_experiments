@@ -54,7 +54,7 @@ SerialADC::~SerialADC() {
 void SerialADC::resize(int n_samples) {
     _stop_worker();
 
-    if (_sample_bufs.ndim() == 3 && _sample_bufs.shape(1) == n_samples) {
+    if (_front_bufs.ndim() == 3 && _front_bufs.shape(1) == n_samples) {
         _n_samples = n_samples;
         return;
     }
@@ -83,10 +83,6 @@ void SerialADC::resize(int n_samples) {
     _rx_data_virt = (uint8_t*)(_tx_data_virt + 3);
     _rx_data_bus  = (uint8_t*)(_tx_data_bus  + 3);
 
-    _sample_bufs = py::array_t<float>(
-        {_n_channels, _n_samples, 2},
-        {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-    );
     _resize_flat_bufs(_n_channels, _n_samples);
 
     _setup_dma_cbs();
@@ -279,10 +275,6 @@ void SerialADC::_on_la_mode_exit() {
         _rx_data_virt = (uint8_t*)(_tx_data_virt + 3);
         _rx_data_bus  = (uint8_t*)(_tx_data_bus  + 3);
     }
-    _sample_bufs = py::array_t<float>(
-        {_n_channels, _n_samples, 2},
-        {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-    );
     _resize_flat_bufs(_n_channels, _n_samples);
     _setup_dma_cbs();
 }

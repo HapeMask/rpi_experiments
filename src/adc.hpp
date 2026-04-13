@@ -37,9 +37,9 @@ public:
 
     virtual std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(
         int screen_width,
+        std::pair<double, double> x_range = {0.0, -1.0},
         bool auto_range = false,
-        float low_thresh = 0.5,
-        float high_thresh = 2.5,
+        std::pair<float, float> thresh = {0.5f, 2.5f},
         TrigMode trig_mode = TrigMode::RISING_EDGE,
         int skip_samples = 0
     );
@@ -58,8 +58,6 @@ protected:
     int _n_channels;
     std::vector<bool> _active_channels;
 
-    // TODO: use this again and not the weird flat accessor helper thing.
-    py::array_t<float> _sample_bufs;  // used only for the resize() shape check
     bool _logic_analyzer_mode = false;
     int _logic_analyzer_n_bits = 8;
 
@@ -83,8 +81,8 @@ protected:
     std::atomic<bool>  _running{false};
     std::mutex         _buf_mutex;
     std::atomic<uint64_t> _front_gen{0};
-    std::vector<float> _front_data;  // latest completed data, read by get_buffers()
-    std::vector<float> _back_data;   // worker writes here during _finish_fetch()
+    py::array_t<float> _front_bufs;  // latest completed data, read by get_buffers()
+    py::array_t<float> _back_bufs;   // worker writes here during _finish_fetch()
 
     void _resize_flat_bufs(int n_channels, int n_samples);
     void _start_worker(double rate_hz);
@@ -111,7 +109,7 @@ protected:
     void _la_resize(int n_samples);
 
     // Called by set_logic_analyzer_mode(false) so the subclass can restore its
-    // non-LA buffers, _sample_bufs, and DMA CBs.
+    // non-LA buffers and DMA CBs.
     virtual void _on_la_mode_exit() = 0;
 
     // Subclass data-acquisition interface

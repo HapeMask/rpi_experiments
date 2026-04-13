@@ -483,35 +483,23 @@ class Oscilloscope(QApplication):
         if screen_width <= 0:
             screen_width = 800
 
-        buffers, triggered, trig_start = self.adc.get_buffers(
+        x_range = tuple(self.graph.getViewBox().viewRange()[0])
+
+        buffers, triggered, _trig_start = self.adc.get_buffers(
             screen_width=self.graph_antialias_factor * screen_width,
+            x_range=x_range,
             auto_range=self.trig_auto_checkbox.isChecked(),
-            low_thresh=low_thresh,
-            high_thresh=high_thresh,
+            thresh=(low_thresh, high_thresh),
             trig_mode=self.trig_mode,
             skip_samples=skip_samples,
         )
 
-        # Convert raw-sample skip count to bins, since get_buffers returns a
-        # binned buffer where one bin may cover many raw samples.
-        n_bins = buffers.shape[1]
-        bin_cut_idx = int(skip_samples * n_bins / self.adc.n_samples)
-        buffers = buffers[:, bin_cut_idx:]
-
-        # shape: [n_ch, n_binned, 2] — last dim is [value, sample_idx]
+        # shape: [n_ch, screen_width, 2] — last dim is [value, time_seconds]
+        # Timestamps are already trigger-adjusted and in seconds.
         samples, timestamps = buffers[..., 0], buffers[..., 1]
+        timestamps = timestamps[0]
 
-        # TODO: Maybe cache but need to handle slicing better w.r.t. changing
-        # timestamp size and sample buffer size.
-        timestamps = timestamps[0] / self.adc_sample_rate
-
-        if triggered and trig_start is not None:
-            # trig_start is a bin index into the unsliced buffer. Adjust for
-            # the bins we removed from the front.
-            adjusted_trig = trig_start - bin_cut_idx
-            timestamps = timestamps - timestamps[adjusted_trig]
-
-        # samples shape: [n_ch, n_binned]
+        # samples shape: [n_ch, screen_width]
         samples = self.adc.scale_samples(samples)
 
         return samples, timestamps, triggered

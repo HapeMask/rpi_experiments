@@ -24,9 +24,10 @@ ADC::~ADC() {
 }
 
 void ADC::_resize_flat_bufs(int n_channels, int n_samples) {
-    const size_t sz = (size_t)n_channels * n_samples * 2;
-    _front_data.assign(sz, 0.f);
-    _back_data.assign(sz, 0.f);
+    _front_bufs = py::array_t<float>({n_channels, n_samples, 2});
+    _back_bufs  = py::array_t<float>({n_channels, n_samples, 2});
+    std::memset(_front_bufs.mutable_data(), 0, _front_bufs.nbytes());
+    std::memset(_back_bufs.mutable_data(),  0, _back_bufs.nbytes());
 }
 
 // ---- LA buffer management -----------------------------------------------
@@ -132,10 +133,6 @@ void ADC::_abort_la_fetch() {
 void ADC::_la_resize(int n_samples) {
     _la_free_buf();
     _la_alloc_buf(n_samples);
-    _sample_bufs = py::array_t<float>(
-        {_logic_analyzer_n_bits, n_samples, 2},
-        {n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-    );
     _resize_flat_bufs(_logic_analyzer_n_bits, n_samples);
     _setup_la_dma_cbs();
 }
@@ -154,10 +151,6 @@ void ADC::set_logic_analyzer_mode(bool enable, int n_bits) {
 
     if (enable) {
         _la_alloc_buf(_n_samples);
-        _sample_bufs = py::array_t<float>(
-            {n_bits, _n_samples, 2},
-            {_n_samples * 2 * sizeof(float), 2 * sizeof(float), sizeof(float)}
-        );
         _resize_flat_bufs(n_bits, _n_samples);
         _setup_la_dma_cbs();
     } else {
@@ -197,11 +190,11 @@ void ADC::_worker_loop(double rate_hz) {
 
         if (!_running) break;  // abort before collecting; DMA cleaned up below
 
-        _finish_fetch(_back_data.data());
+        _finish_fetch(_back_bufs.mutable_data());
 
         {
             std::lock_guard<std::mutex> lock(_buf_mutex);
-            std::swap(_front_data, _back_data);
+            std::swap(_front_bufs, _back_bufs);
         }
         ++_front_gen;
 
@@ -213,39 +206,43 @@ void ADC::_worker_loop(double rate_hz) {
 
 std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
     int screen_width,
+    std::pair<double, double> x_range,
     bool auto_range,
-    float low_thresh,
-    float high_thresh,
+    std::pair<float, float> thresh,
     TrigMode trig_mode,
     int skip_samples
 ) {
+    const auto [x_start, x_end]     = x_range;
+    const auto [low_thresh, high_thresh] = thresh;
     if (skip_samples < 0) skip_samples = 0;
-
-    const int n_samp = _n_samples;
-    const int n_ch_stored = (
-        (n_samp > 0 && !_front_data.empty()) ?
-        static_cast<int>(_front_data.size() / (static_cast<size_t>(n_samp) * 2))
-        : 0
-    );
-
-    if (skip_samples >= n_samp || n_ch_stored == 0 || n_active_channels() == 0) {
-        return {py::array_t<float>({n_ch_stored, screen_width, 2}), false, std::nullopt};
-    }
 
     // Snapshot the latest completed buffer. Hold the lock only for the copy so
     // the worker can swap its next completed buffer while we process this one.
-    std::vector<float> samples;
+    int n_ch_in_buf = 0;
+    py::array_t<float> snap;
+
+    // Read _front_bufs shape and snapshot its data under one lock. The worker
+    // does std::swap(_front_bufs, _back_bufs) under this same lock, and move-
+    // swap briefly sets _front_bufs.m_ptr = nullptr as an intermediate step —
+    // accessing it outside the lock can dereference null.
     {
         std::lock_guard<std::mutex> lock(_buf_mutex);
-        samples = _front_data;
+        if (_front_bufs.ndim() == 3) {
+            n_ch_in_buf = static_cast<int>(_front_bufs.shape(0));
+        }
+
+        if (n_ch_in_buf > 0) {
+            snap = py::array_t<float>({n_ch_in_buf, _n_samples, 2}, _front_bufs.data());
+        }
     }
 
-    // Flat accessor for shape [n_ch, n_samp, 2]
-    auto at = [&](int ch, int i, int field) -> float {
-        return samples[static_cast<size_t>(ch) * n_samp * 2 + i * 2 + field];
-    };
+    if (skip_samples >= _n_samples || n_ch_in_buf == 0 || n_active_channels() == 0) {
+        return {py::array_t<float>({n_ch_in_buf, screen_width, 2}), false, std::nullopt};
+    }
 
-    // Trigger logic (channel 0 only)
+    auto snap_ref = snap.unchecked<3>();
+
+    // Trigger detection (channel 0 only)
     bool triggered = false;
     std::optional<int> trig_start = std::nullopt;
 
@@ -255,66 +252,89 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
         float high = high_thresh;
 
         if (auto_range) {
-            float min_val  = at(ch, skip_samples, 0);
+            float min_val  = snap_ref(ch, skip_samples, 0);
             float max_val  = min_val;
             float mean_val = 0;
-            for (int i = skip_samples + 1; i < n_samp; ++i) {
-                const float v = at(ch, i, 0);
+            for (int i = skip_samples + 1; i < _n_samples; ++i) {
+                const float v = snap_ref(ch, i, 0);
                 min_val   = std::min(min_val, v);
                 max_val   = std::max(max_val, v);
                 mean_val += v;
             }
-            mean_val /= (n_samp - skip_samples);
+            mean_val /= (_n_samples - skip_samples);
             const float range = max_val - min_val;
             low  = mean_val - 0.2f * range;
             high = mean_val + 0.2f * range;
         }
 
         if (trig_mode == TrigMode::RISING_EDGE) {
-            for (int i = skip_samples; i < n_samp; ++i) {
-                const float v = at(ch, i, 0);
+            for (int i = skip_samples; i < _n_samples; ++i) {
+                const float v = snap_ref(ch, i, 0);
                 if (v < low) trig_start = i;
                 if (v >= high && trig_start.has_value()) { triggered = true; break; }
             }
         } else if (trig_mode == TrigMode::FALLING_EDGE) {
-            for (int i = skip_samples; i < n_samp; ++i) {
-                const float v = at(ch, i, 0);
+            for (int i = skip_samples; i < _n_samples; ++i) {
+                const float v = snap_ref(ch, i, 0);
                 if (v > high) trig_start = i;
                 if (v <= low && trig_start.has_value()) { triggered = true; break; }
             }
         }
     }
 
-    // Binning: downsample to screen_width bins
-    py::array_t<float> binned_bufs({n_ch_stored, screen_width, 2});
+    // Time origin: sample index at t=0 (trigger point if triggered, else 0)
+    const double sample_rate = _get_sample_rate_hz();
+    const double trigger_origin = (triggered && trig_start.has_value())
+        ? static_cast<double>(*trig_start)
+        : 0.0;
+
+    // Convert visible time window to sample indices.
+    // If x_end <= x_start (e.g. default -1), show the full valid range.
+    int win_start, win_end;
+    if (x_end <= x_start) {
+        win_start = skip_samples;
+        win_end   = _n_samples;
+    } else {
+        win_start = static_cast<int>(std::round(x_start * sample_rate + trigger_origin));
+        win_end   = static_cast<int>(std::round(x_end   * sample_rate + trigger_origin));
+        win_start = std::max(win_start, skip_samples);
+        win_end   = std::min(win_end, _n_samples);
+    }
+
+    if (win_start >= win_end) {
+        return {py::array_t<float>({n_ch_in_buf, screen_width, 2}), triggered, trig_start};
+    }
+
+    // Bin win_start..win_end into screen_width bins. Timestamps are in seconds,
+    // relative to the trigger point (or to sample 0 if not triggered).
+    py::array_t<float> binned_bufs({n_ch_in_buf, screen_width, 2});
     auto bbuf = binned_bufs.mutable_unchecked<3>();
 
-    const float samples_per_bin = static_cast<float>(n_samp) / screen_width;
+    const int win_size = win_end - win_start;
+    const float bins_to_samples = static_cast<float>(win_size) / screen_width;
 
     for (int b = 0; b < screen_width; ++b) {
-        int start = static_cast<int>(b * samples_per_bin);
-        int end   = static_cast<int>((b + 1) * samples_per_bin);
-        if (end > n_samp) end = n_samp;
-        if (start >= end) start = std::max(0, end - 1);
+        int s_start = win_start + static_cast<int>(b * bins_to_samples);
+        int s_end   = win_start + static_cast<int>((b + 1) * bins_to_samples);
+        if (s_end > win_end) s_end = win_end;
+        if (s_start >= s_end) s_start = std::max(win_start, s_end - 1);
 
-        const int count = end - start;
-        for (int ch = 0; ch < n_ch_stored; ++ch) {
-            float sum_val = 0, sum_ts = 0;
-            for (int i = start; i < end; ++i) {
-                sum_val += at(ch, i, 0);
-                sum_ts  += at(ch, i, 1);
+        const int count = s_end - s_start;
+        const float bin_time = static_cast<float>(
+            (static_cast<double>(s_start + s_end) * 0.5 - trigger_origin) / sample_rate
+        );
+
+        for (int ch = 0; ch < n_ch_in_buf; ++ch) {
+            float sum_val = 0;
+            for (int i = s_start; i < s_end; ++i) {
+                sum_val += snap_ref(ch, i, 0);
             }
             bbuf(ch, b, 0) = sum_val / count;
-            bbuf(ch, b, 1) = sum_ts  / count;
+            bbuf(ch, b, 1) = bin_time;
         }
     }
 
-    std::optional<int> binned_trig_start = std::nullopt;
-    if (trig_start.has_value()) {
-        binned_trig_start = static_cast<int>(*trig_start / samples_per_bin);
-    }
-
-    return {binned_bufs, triggered, binned_trig_start};
+    return {binned_bufs, triggered, trig_start};
 }
 
 bool ADC::channel_active(int ch) const {

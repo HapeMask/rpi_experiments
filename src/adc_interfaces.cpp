@@ -22,9 +22,9 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
     py::class_<ADC>(m, "ADC")
         .def("get_buffers", &ADC::get_buffers,
              py::arg("screen_width"),
+             py::arg("x_range")=std::make_pair(0.0, -1.0),
              py::arg("auto_range")=false,
-             py::arg("low_thresh")=0.5f,
-             py::arg("high_thresh")=2.5f,
+             py::arg("thresh")=std::make_pair(0.5f, 2.5f),
              py::arg("trig_mode")=TrigMode::RISING_EDGE,
              py::arg("skip_samples")=0
         )
