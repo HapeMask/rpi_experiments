@@ -547,11 +547,12 @@ def main():
         sample_rates = AVAILABLE_SAMPLE_RATES
 
         # For old scope
-        #adc = ADC1175()
-
-        # For new scope
-        adc = ADC3908()
-        adc.update_dac()
+        if "-adc1175" in sys.argv:
+            adc = ADC1175()
+        else:
+            # For new scope
+            adc = ADC3908()
+            adc.update_dac()
 
     print("Setting up app...")
     pg.setConfigOptions(antialias=True)

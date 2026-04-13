@@ -102,10 +102,9 @@ ADC1175_FULLSCALE_VPP: Tuple[float, float] = (0.6, 2.6)
 class ADC1175(ParallelADC):
     def __init__(
         self,
-        VREF: Tuple[float, float],
         n_samples: int=16384,
         n_channels: int=2,
-        input_range: Tuple[float, float] = (-8.08, 8.08),
+        input_range: Tuple[float, float] = (-0.66, 0.66),
     ):
         super().__init__(
             VREF=ADC1175_FULLSCALE_VPP,
