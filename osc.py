@@ -30,6 +30,7 @@ from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
+FSR_RANGES_10X = [0.33, 1.0, 3.3, 5.0, 10.0]
 AVAILABLE_BUFFER_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32767, 65535, 131072, 262144]
 
 # Colors for oscilloscope channels (Ch0, Ch1, ...)
@@ -203,6 +204,33 @@ class Oscilloscope(QApplication):
         right_box.addWidget(QLabel("Sample Buffer"))
         right_box.addWidget(self.sample_buffer_input)
         right_box.addStretch(1)
+
+        if hasattr(adc, "set_fullscale_range"):
+            input_range_gbox = QGroupBox("Input Range")
+            input_range_layout = QVBoxLayout()
+            input_range_gbox.setLayout(input_range_layout)
+
+            self.probe_10x_checkbox = QCheckBox("10x Probe")
+            self.probe_10x_checkbox.setChecked(adc._10x_mode)
+            self.probe_10x_checkbox.toggled.connect(self._on_probe_mode_toggled)
+
+            self.fsr_combo = QComboBox()
+            self.fsr_combo.currentIndexChanged.connect(self._on_fsr_selected)
+
+            self.fsr_status_label = QLabel()
+            self.fsr_status_label.setStyleSheet("color: #cc3333;")
+
+            input_range_layout.addWidget(self.probe_10x_checkbox)
+            input_range_layout.addWidget(self.fsr_combo)
+            input_range_layout.addWidget(self.fsr_status_label)
+
+            right_box.addWidget(input_range_gbox)
+            self._populate_fsr_combo()
+        else:
+            self.fsr_combo = None
+            self.probe_10x_checkbox = None
+            self.fsr_status_label = None
+
         right_box.addWidget(trig_gbox)
 
         trig_rising_radio.mode = TrigMode.RISING_EDGE
@@ -316,6 +344,39 @@ class Oscilloscope(QApplication):
         windowLightness = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
         darkMode = windowTextLightness > windowLightness
         self.setProperty("darkMode", darkMode)
+
+    def _populate_fsr_combo(self):
+        if self.fsr_combo is None:
+            return
+        self.fsr_combo.blockSignals(True)
+        self.fsr_combo.clear()
+        for fsr in FSR_RANGES_10X:
+            display_fsr = fsr if self.adc._10x_mode else fsr / 10
+            self.fsr_combo.addItem(f"±{display_fsr:g}V", display_fsr)
+        self.fsr_combo.blockSignals(False)
+
+    def _on_probe_mode_toggled(self, checked):
+        self.adc._10x_mode = checked
+        self._populate_fsr_combo()
+        self._apply_fsr()
+
+    def _on_fsr_selected(self, _idx):
+        self._apply_fsr()
+
+    def _apply_fsr(self):
+        if self.fsr_combo is None:
+            return
+        fsr_peak = self.fsr_combo.currentData()
+        if fsr_peak is None:
+            return
+        if self.fsr_status_label is not None:
+            self.fsr_status_label.setText("")
+        try:
+            self.adc.set_fullscale_range(fsr_peak)
+            self.reset_graph_range()
+        except ValueError:
+            if self.fsr_status_label is not None:
+                self.fsr_status_label.setText("Not achievable")
 
     def _recreate_plot_lines(self):
         """Clear and recreate plot lines for the current number of active channels."""

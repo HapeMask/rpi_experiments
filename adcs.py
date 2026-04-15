@@ -1,3 +1,4 @@
+import math
 from typing import Tuple, Union
 
 import numpy as np
@@ -62,6 +63,7 @@ class ADC3908(ParallelADC):
         self._45x_att = False
 
         self.update_dac()
+        self.set_attenuation(False, False)
 
     def update_dac(self):
         self.dac.set_voltages(
@@ -95,6 +97,39 @@ class ADC3908(ParallelADC):
 
     def fullscale_range(self):
         return self.scale_samples(np.asarray(ADC3908_FULLSCALE_VPP)[None]).ravel()
+
+    def set_fullscale_range(self, fsr_peak: float) -> None:
+        """Set hardware gain/attenuation to achieve the given full-scale peak voltage.
+
+        fsr_peak is the peak input voltage in real-world units (e.g. 3.3 for ±3.3V).
+        Raises ValueError if the requested FSR is not achievable with current hardware.
+        """
+        fda_gain    = (FDA_GAIN_R[0] + FDA_GAIN_R[1]) / FDA_GAIN_R[1]
+        att_factor  = (ATT_GAIN_R[0] + ATT_GAIN_R[1]) / ATT_GAIN_R[1]
+        probe_factor = 10.0 if self._10x_mode else 1.0
+        # ADC input peak is 0.95 V; after scale_samples: v_real = 2*0.95 / total_gain
+        required_total_gain = 1.9 / fsr_peak
+
+        _VGA_MIN = 1.0
+        _VGA_MAX = 10 ** (24.2 / 20)  # ≈ 16.22
+
+        for use_att in (False, True):
+            divisor = att_factor if use_att else 1.0
+            required_vga = required_total_gain * probe_factor * divisor / fda_gain
+            if _VGA_MIN <= required_vga <= _VGA_MAX:
+                gain_db = 20.0 * math.log10(required_vga)
+                v_gain  = (gain_db - 12.1) / 20.0
+                v_gain  = max(GAIN_OUTPUT_RANGE[0], min(GAIN_OUTPUT_RANGE[1], v_gain))
+                self._45x_att = use_att
+                self.set_attenuation(use_att, use_att)
+                self.channel_gain_voltages[:] = v_gain
+                self.update_dac()
+                return
+
+        raise ValueError(
+            f"±{fsr_peak}V FSR is not achievable "
+            f"({'10x probe' if self._10x_mode else 'direct'} mode)"
+        )
 
 
 ADC1175_FULLSCALE_VPP: Tuple[float, float] = (0.6, 2.6)

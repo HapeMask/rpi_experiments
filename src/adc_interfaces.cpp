@@ -60,9 +60,11 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
             py::arg("n_samples")=16384,
             py::arg("n_channels")=2,
             // TODO: Make all ADCs support different number formats.
-            // TODO: Make an enum for this too. 
+            // TODO: Make an enum for this too.
             // 0: offset binary
             // 1: 2's complement
             py::arg("bit_format")=1
-        );
+        )
+        .def("set_attenuation", &ParallelADC::set_attenuation,
+             py::arg("ch1_att"), py::arg("ch2_att"));
 }
