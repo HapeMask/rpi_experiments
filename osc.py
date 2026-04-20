@@ -30,7 +30,7 @@ from custom_viewbox import CustomViewBox, MinSizeMainWindow
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
-FSR_RANGES_10X = [0.33, 1.0, 3.3, 5.0, 10.0]
+FSR_RANGES_10X = [0.33, 1.0, 3.3, 10.0]
 AVAILABLE_BUFFER_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32767, 65535, 131072, 262144]
 
 # Colors for oscilloscope channels (Ch0, Ch1, ...)
@@ -205,13 +205,13 @@ class Oscilloscope(QApplication):
         right_box.addWidget(self.sample_buffer_input)
         right_box.addStretch(1)
 
-        if hasattr(adc, "set_fullscale_range"):
+        if hasattr(adc, "set_input_fullscale_range"):
             input_range_gbox = QGroupBox("Input Range")
             input_range_layout = QVBoxLayout()
             input_range_gbox.setLayout(input_range_layout)
 
             self.probe_10x_checkbox = QCheckBox("10x Probe")
-            self.probe_10x_checkbox.setChecked(adc._10x_mode)
+            self.probe_10x_checkbox.setChecked(adc._10x_mode[0])
             self.probe_10x_checkbox.toggled.connect(self._on_probe_mode_toggled)
 
             self.fsr_combo = QComboBox()
@@ -317,10 +317,14 @@ class Oscilloscope(QApplication):
         central_widget.setLayout(layout)
         self.window.setCentralWidget(central_widget)
 
+        # Set UI elements and hardware to default configurations.
         self.set_sample_rate(init_sample_rate)
         self.channel_toggles[0].setChecked(True)
         self.toggle_channel(0)
         self.resize_sample_buffer(adc.n_samples)
+        if self.fsr_combo is not None:
+            self.fsr_combo.setCurrentIndex(FSR_RANGES_10X.index(3.3))
+            self._apply_fsr()
 
         self.reset_graph_range()
 
@@ -351,12 +355,13 @@ class Oscilloscope(QApplication):
         self.fsr_combo.blockSignals(True)
         self.fsr_combo.clear()
         for fsr in FSR_RANGES_10X:
-            display_fsr = fsr if self.adc._10x_mode else fsr / 10
+            display_fsr = fsr if self.adc._10x_mode[0] else fsr / 10
             self.fsr_combo.addItem(f"±{display_fsr:g}V", display_fsr)
         self.fsr_combo.blockSignals(False)
 
     def _on_probe_mode_toggled(self, checked):
-        self.adc._10x_mode = checked
+        for channel in range(self.n_channels):
+            self.adc._10x_mode[channel] = checked
         self._populate_fsr_combo()
         self._apply_fsr()
 
@@ -372,7 +377,8 @@ class Oscilloscope(QApplication):
         if self.fsr_status_label is not None:
             self.fsr_status_label.setText("")
         try:
-            self.adc.set_fullscale_range(fsr_peak)
+            for channel in range(self.n_channels):
+                self.adc.set_input_fullscale_range(channel, fsr_peak)
             self.reset_graph_range()
         except ValueError:
             if self.fsr_status_label is not None:
@@ -426,8 +432,14 @@ class Oscilloscope(QApplication):
             # Pick the biggest FSR across channels based on gain/bias. TODO:
             # Can / should we have separate scales for each channel? Seems
             # confusing.
-            fsr = self.adc.fullscale_range()
-            self.graph.setYRange(fsr[0::2].min(), fsr[1::2].max())
+            fsrs = [
+                self.adc.input_fullscale_range(ch)
+                for ch in range(self.n_channels)
+                if self.adc.channel_active(ch)
+            ]
+            fsr_min = min(fsr[0] for fsr in fsrs)
+            fsr_max = max(fsr[1] for fsr in fsrs)
+            self.graph.setYRange(fsr_min, fsr_max)
 
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
@@ -523,12 +535,15 @@ class Oscilloscope(QApplication):
         self.trig_line.setVisible(visible)
 
     def sample_osc(self):
+        skip_samples = 0
         if isinstance(self.adc, ADC1175):
             # TODO: Hack. Things get less reliable for early samples at high sample
             # rates with this ADC.
             skip_samples = int(10e-6 * self.adc_sample_rate)
-        else:
-            skip_samples = 0
+        elif isinstance(self.adc, ADC3908) and self.adc_sample_rate > 40e6:
+            # TODO: And apparently this ADC too, albeit just a few samples and
+            # only at max rates.
+            skip_samples = 32
 
         low_thresh = 0.5
         high_thresh = 2.5
@@ -537,14 +552,18 @@ class Oscilloscope(QApplication):
             and (self.trig_mode != TrigMode.NONE)
         )
         if use_trig_line:
-            low_thresh = self.trig_line.value()
-            high_thresh = self.trig_line.value()
+            low_thresh = float(self.trig_line.value())
+            high_thresh = float(self.trig_line.value())
 
         screen_width = self.graph.width()
         if screen_width <= 0:
             screen_width = 800
 
         x_range = tuple(self.graph.getViewBox().viewRange()[0])
+
+        # TODO: Allow triggering on user's choice of channel instead of always ch1?
+        low_thresh = self.adc.real_to_adc_fs(low_thresh, 0)
+        high_thresh = self.adc.real_to_adc_fs(high_thresh, 0)
 
         buffers, triggered, _trig_start = self.adc.get_buffers(
             screen_width=self.graph_antialias_factor * screen_width,
@@ -561,7 +580,10 @@ class Oscilloscope(QApplication):
         timestamps = timestamps[0]
 
         # samples shape: [n_ch, screen_width]
-        samples = self.adc.scale_samples(samples)
+        samples = [
+            self.adc.adc_fs_to_real(samples[ch], ch)
+            for ch in range(self.n_channels)
+        ]
 
         return samples, timestamps, triggered
 
@@ -577,12 +599,14 @@ class Oscilloscope(QApplication):
         samples, timestamps, triggered = self.sample_osc()
 
         for ch_idx, line in enumerate(self.osc_lines):
-            if ch_idx >= samples.shape[0]:
-                break
+            if not self.adc.channel_active(ch_idx):
+                continue
+
             ch_samples = samples[ch_idx]
             if self.la_mode:
                 # Bit i spans [i, i+0.5]: scale 0/1 to 0/0.5, then offset by bit index
                 ch_samples = ch_samples * 0.5 + ch_idx
+
             line.setData(timestamps, ch_samples)
 
         if self.trig_oneshot_button.isChecked() and triggered:
@@ -612,7 +636,7 @@ def main():
             adc = ADC1175()
         else:
             # For new scope
-            adc = ADC3908()
+            adc = ADC3908(n_samples=4096)
             adc.update_dac()
 
     print("Setting up app...")

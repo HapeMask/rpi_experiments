@@ -22,7 +22,7 @@ class ParallelADC : public ADC {
         void resize(int n_samples) override;
 
         int n_active_channels() const override;
-        void set_attenuation(bool ch1_att, bool ch2_att);
+        void set_attenuation(int channel, bool att_on);
 
     protected:
         uint32_t _cur_real_sample_rate = 0;

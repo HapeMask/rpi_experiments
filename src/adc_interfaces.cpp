@@ -66,5 +66,5 @@ PYBIND11_MODULE(adc_interfaces, m, py::mod_gil_not_used()) {
             py::arg("bit_format")=1
         )
         .def("set_attenuation", &ParallelADC::set_attenuation,
-             py::arg("ch1_att"), py::arg("ch2_att"));
+             py::arg("channel"), py::arg("att_on"));
 }

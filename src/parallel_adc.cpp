@@ -218,10 +218,11 @@ int ParallelADC::n_active_channels() const {
     return n_act;
 }
 
-void ParallelADC::set_attenuation(bool ch1_att, bool ch2_att) {
-    // HIGH = attenuation disabled, LOW = attenuation enabled
-    if (ch1_att) _gpio.clear_pin(24); else _gpio.set_pin(24);
-    if (ch2_att) _gpio.clear_pin(25); else _gpio.set_pin(25);
+void ParallelADC::set_attenuation(int channel, bool att_on) {
+    const int pin = (channel == 0) ? 24 : 25;
+    // HIGH = attenuation disabled, LOW = attenuation enabled because I wired
+    // it backwards lol.
+    if (att_on) { _gpio.clear_pin(pin); } else { _gpio.set_pin(pin); }
 }
 
 float ParallelADC::_sample_to_float(uint8_t raw_sample) const {
