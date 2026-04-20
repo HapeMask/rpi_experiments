@@ -24,7 +24,7 @@ def get_si_prefixes(val: float) -> Tuple[str, str, float]:
         pref = "T"
         inv_pref = "p"
         scale = 1e12
-    if lval >= 9 or lval <= -6:
+    elif lval >= 9 or lval <= -6:
         pref = "G"
         inv_pref = "n"
         scale = 1e9

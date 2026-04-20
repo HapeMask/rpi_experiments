@@ -440,9 +440,7 @@ class Oscilloscope(QApplication):
             n_ch = self.adc.n_active_channels()
             self.graph.setYRange(-0.25, n_ch)
         else:
-            # Pick the biggest FSR across channels based on gain/bias. TODO:
-            # Can / should we have separate scales for each channel? Seems
-            # confusing.
+            # Pick the biggest FSR across active channels based on gain/bias.
             fsrs = [
                 self.adc.input_fullscale_range(ch)
                 for ch in range(self.n_channels)
