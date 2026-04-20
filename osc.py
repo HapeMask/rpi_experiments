@@ -9,6 +9,9 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -167,30 +170,15 @@ class Oscilloscope(QApplication):
         right_box.addStretch(1)
 
         if hasattr(adc, "set_input_fullscale_range"):
-            input_range_gbox = QGroupBox("Input Range")
-            input_range_layout = QVBoxLayout()
-            input_range_gbox.setLayout(input_range_layout)
-
-            self.probe_10x_checkbox = QCheckBox("10x Probe")
-            self.probe_10x_checkbox.setChecked(adc._10x_mode[0])
-            self.probe_10x_checkbox.toggled.connect(self._on_probe_mode_toggled)
-
-            self.fsr_combo = QComboBox()
-            self.fsr_combo.currentIndexChanged.connect(self._on_fsr_selected)
-
-            self.fsr_status_label = QLabel()
-            self.fsr_status_label.setStyleSheet("color: #cc3333;")
-
-            input_range_layout.addWidget(self.probe_10x_checkbox)
-            input_range_layout.addWidget(self.fsr_combo)
-            input_range_layout.addWidget(self.fsr_status_label)
-
-            right_box.addWidget(input_range_gbox)
-            self._populate_fsr_combo()
+            self.channel_config_button = QPushButton("Channel Config...")
+            self.channel_config_button.clicked.connect(self._open_channel_config)
+            right_box.addWidget(self.channel_config_button)
+            self._build_channel_config_dialog()
         else:
-            self.fsr_combo = None
-            self.probe_10x_checkbox = None
-            self.fsr_status_label = None
+            self.channel_config_button = None
+            self.channel_config_dialog = None
+            self.channel_fsr_combos: List[QComboBox] = []
+            self.channel_fsr_status_labels: List[QLabel] = []
 
 
         trig_rising_radio.mode = TrigMode.RISING_EDGE
@@ -270,9 +258,14 @@ class Oscilloscope(QApplication):
         self.channel_toggles[0].setChecked(True)
         self.toggle_channel(0)
         self.resize_sample_buffer(adc.n_samples)
-        if self.fsr_combo is not None:
-            self.fsr_combo.setCurrentIndex(FSR_RANGES_10X.index(3.3))
-            self._apply_fsr()
+        if self.channel_config_button is not None:
+            default_fsr_idx = FSR_RANGES_10X.index(3.3)
+            for ch in range(self.n_channels):
+                combo = self.channel_fsr_combos[ch]
+                combo.blockSignals(True)
+                combo.setCurrentIndex(default_fsr_idx)
+                combo.blockSignals(False)
+                self._apply_channel_fsr(ch, reset_range=False)
 
         self.reset_graph_range()
 
@@ -297,50 +290,120 @@ class Oscilloscope(QApplication):
         darkMode = windowTextLightness > windowLightness
         self.setProperty("darkMode", darkMode)
 
-    def _populate_fsr_combo(self):
-        if self.fsr_combo is None:
-            return
-        self.fsr_combo.blockSignals(True)
-        self.fsr_combo.clear()
+    def _build_channel_config_dialog(self):
+        self.channel_config_dialog = QDialog(self.window)
+        self.channel_config_dialog.setWindowTitle("Channel Configuration")
+        self.channel_config_dialog.setModal(True)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(0)
+        grid.setVerticalSpacing(0)
+        grid.addWidget(self._make_row_cell(QLabel("Channel")), 0, 0)
+        grid.addWidget(self._make_row_cell(QLabel("10x Probe")), 0, 2)
+        grid.addWidget(self._make_row_cell(QLabel("Input Range")), 0, 4)
+
+        self.channel_fsr_combos = []
+        self.channel_fsr_status_labels = []
+
+        for ch in range(self.n_channels):
+            bg = QtGui.QColor(CHANNEL_COLORS[ch % len(CHANNEL_COLORS)])
+            bg.setAlpha(60)
+
+            grid.addWidget(self._make_row_cell(QLabel(f"Ch. {ch}"), bg), ch + 1, 0)
+
+            checkbox = QCheckBox()
+            checkbox.setChecked(self.adc._10x_mode[ch])
+            checkbox.toggled.connect(
+                lambda checked, c=ch: self._on_channel_probe_toggled(c, checked)
+            )
+            grid.addWidget(
+                self._make_row_cell(checkbox, bg, align=QtCore.Qt.AlignmentFlag.AlignCenter),
+                ch + 1, 2,
+            )
+
+            combo = QComboBox()
+            combo.currentIndexChanged.connect(
+                lambda _idx, c=ch: self._apply_channel_fsr(c)
+            )
+            grid.addWidget(self._make_row_cell(combo, bg), ch + 1, 4)
+            self.channel_fsr_combos.append(combo)
+
+            status = QLabel()
+            status.setStyleSheet("color: #cc3333;")
+            grid.addWidget(self._make_row_cell(status, bg), ch + 1, 6)
+            self.channel_fsr_status_labels.append(status)
+
+            self._populate_channel_fsr_combo(ch)
+
+        for col in (1, 3, 5):
+            vline = QFrame()
+            vline.setFrameShape(QFrame.Shape.VLine)
+            vline.setFrameShadow(QFrame.Shadow.Sunken)
+            grid.addWidget(vline, 0, col, self.n_channels + 1, 1)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(self.channel_config_dialog.close)
+        button_box.accepted.connect(self.channel_config_dialog.close)
+
+        dialog_layout = QVBoxLayout()
+        dialog_layout.addLayout(grid)
+        dialog_layout.addWidget(button_box)
+        self.channel_config_dialog.setLayout(dialog_layout)
+
+    def _make_row_cell(self, widget, bg_color=None, align=None):
+        container = QFrame()
+        if bg_color is not None:
+            container.setAutoFillBackground(True)
+            palette = container.palette()
+            palette.setColor(QtGui.QPalette.ColorRole.Window, bg_color)
+            container.setPalette(palette)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(8, 4, 8, 4)
+        if align is not None:
+            layout.addWidget(widget, alignment=align)
+        else:
+            layout.addWidget(widget)
+        return container
+
+    def _open_channel_config(self):
+        self.channel_config_dialog.exec()
+
+    def _populate_channel_fsr_combo(self, ch):
+        combo = self.channel_fsr_combos[ch]
+        prev_idx = combo.currentIndex()
+        combo.blockSignals(True)
+        combo.clear()
         for fsr in FSR_RANGES_10X:
-            display_fsr = fsr if self.adc._10x_mode[0] else fsr / 10
-            self.fsr_combo.addItem(f"±{display_fsr:g}V", display_fsr)
-        self.fsr_combo.blockSignals(False)
+            display_fsr = fsr if self.adc._10x_mode[ch] else fsr / 10
+            combo.addItem(f"±{display_fsr:g}V", display_fsr)
+        combo.setCurrentIndex(prev_idx)
+        combo.blockSignals(False)
 
-    def _on_probe_mode_toggled(self, checked):
-        for channel in range(self.n_channels):
-            self.adc._10x_mode[channel] = checked
-        self._populate_fsr_combo()
-        self._apply_fsr()
+    def _on_channel_probe_toggled(self, ch, checked):
+        self.adc._10x_mode[ch] = checked
+        self._populate_channel_fsr_combo(ch)
+        self._apply_channel_fsr(ch)
 
-    def _on_fsr_selected(self, _idx):
-        self._apply_fsr()
-
-    def _apply_fsr(self):
-        if self.fsr_combo is None:
-            return
-        fsr_peak = self.fsr_combo.currentData()
+    def _apply_channel_fsr(self, ch, reset_range=True):
+        combo = self.channel_fsr_combos[ch]
+        fsr_peak = combo.currentData()
         if fsr_peak is None:
             return
-        if self.fsr_status_label is not None:
-            self.fsr_status_label.setText("")
+        self.channel_fsr_status_labels[ch].setText("")
         try:
-            for channel in range(self.n_channels):
-                self.adc.set_input_fullscale_range(channel, fsr_peak)
-            self.reset_graph_range()
+            self.adc.set_input_fullscale_range(ch, fsr_peak)
+            if reset_range:
+                self.reset_graph_range()
         except ValueError:
-            if self.fsr_status_label is not None:
-                self.fsr_status_label.setText("Not achievable")
+            self.channel_fsr_status_labels[ch].setText("Not achievable")
 
     def _recreate_plot_lines(self):
-        """Clear and recreate plot lines for the current number of active channels."""
         self.graph.clear()
-        n_ch = self.adc.n_active_channels()
-        dummy = np.zeros(max(self.adc.n_samples, 1), np.float32)
+        n_ch = self.adc.n_active_channels() if self.la_mode else self.n_channels
         self.osc_lines = []
         for ch_idx in range(n_ch):
             color = CHANNEL_COLORS[ch_idx % len(CHANNEL_COLORS)]
-            line = self.graph.plot(dummy, dummy, pen=pg.mkPen(color, width=1))
+            line = self.graph.plot([], [], pen=pg.mkPen(color, width=1))
             self.osc_lines.append(line)
         self.graph.getPlotItem().addItem(self.trig_line)
 
@@ -547,7 +610,7 @@ class Oscilloscope(QApplication):
         samples, timestamps, triggered = self.sample_osc()
 
         for ch_idx, line in enumerate(self.osc_lines):
-            if not self.adc.channel_active(ch_idx):
+            if not self.la_mode and not self.adc.channel_active(ch_idx):
                 continue
 
             ch_samples = samples[ch_idx]
