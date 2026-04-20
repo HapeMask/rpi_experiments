@@ -455,41 +455,11 @@ class Oscilloscope(QApplication):
     def toggle_channel(self, channel_idx):
         self.adc.toggle_channel(channel_idx)
 
-        # >=50MS/s is only available in single-channel mode (only Ch. 0 active)
-        # due to SMI memory bandwidth limitations.
-        n_active_channels = self.adc.n_active_channels()
-        ch0_active = self.channel_toggles[0].isChecked()
-        is_single_channel_mode = (n_active_channels == 1 and ch0_active)
-
-        sample_rates = self.sample_rates
-        buffer_sizes = AVAILABLE_BUFFER_SIZES
-
-        self.sample_rate_input.blockSignals(True)
         self.sample_buffer_input.blockSignals(True)
-
-        if is_single_channel_mode:
-            # Restore all options that may have been removed.
-            for rate in sample_rates:
-                if self.sample_rate_input.findData(rate) < 0:
-                    self.sample_rate_input.addItem(sample_rate_to_msps_str(rate), rate)
-            for size in buffer_sizes:
-                if self.sample_buffer_input.findData(size) < 0:
-                    self.sample_buffer_input.addItem(str(size), size)
-        else:
-            # Remove sample rates >=50MS/s (not supported in dual-channel mode).
-            for idx in range(self.sample_rate_input.count() - 1, -1, -1):
-                if self.sample_rate_input.itemData(idx) >= int(50e6):
-                    self.sample_rate_input.removeItem(idx)
-            # Restore any buffer sizes that were previously removed.
-            for size in buffer_sizes:
-                if self.sample_buffer_input.findData(size) < 0:
-                    self.sample_buffer_input.addItem(str(size), size)
-
-        self.sample_rate_input.blockSignals(False)
+        for size in AVAILABLE_BUFFER_SIZES:
+            if self.sample_buffer_input.findData(size) < 0:
+                self.sample_buffer_input.addItem(str(size), size)
         self.sample_buffer_input.blockSignals(False)
-
-        if not is_single_channel_mode and self.adc_sample_rate >= int(50e6):
-            self.set_sample_rate(int(20e6))
 
         self._recreate_plot_lines()
 
