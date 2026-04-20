@@ -1,7 +1,6 @@
 from typing import Sequence
 
 print("Imports...")
-import os
 import sys
 
 import numpy as np
@@ -44,44 +43,6 @@ LA_MAX_SAMPLES = 65535
 def sample_rate_to_msps_str(sample_rate):
     return f"{sample_rate / 1e6:2.2f} MS/s"
 
-
-def set_icon_css(widget, icon_path, size):
-    class_name = widget.__class__.__name__
-
-    base, ext = os.path.splitext(icon_path)
-    if isinstance(widget, (QRadioButton, QCheckBox)):
-        css = (
-            f"""{class_name}::indicator {{
-    width: {size}px;
-    height: {size}px;
-}}
-
-{class_name}::indicator::unchecked {{
-    image: url({icon_path});
-}}
-
-{class_name}::indicator::checked {{
-    image: url({base}_pressed{ext});
-}}"""
-        )
-    else:
-        css = (
-            f"""{class_name} {{
-    width: {size}px;
-    height: {size}px;
-    image: url({icon_path});
-}}
-
-{class_name}:pressed {{
-    image: url({base}_pressed{ext});
-}}
-
-{class_name}:checked {{
-    image: url({base}_pressed{ext});
-}}"""
-        )
-
-    widget.setStyleSheet(css)
 
 
 class Oscilloscope(QApplication):
@@ -143,10 +104,10 @@ class Oscilloscope(QApplication):
         trig_gbox.setLayout(trig_gbox_layout)
 
         trig_bgrp = QButtonGroup(right_box)
-        trig_rising_radio = QRadioButton()
-        trig_falling_radio = QRadioButton()
-        trig_none_radio = QRadioButton()
-        trig_auto_checkbox = QCheckBox()
+        trig_rising_radio = QRadioButton("Rising")
+        trig_falling_radio = QRadioButton("Falling")
+        trig_none_radio = QRadioButton("None")
+        trig_auto_checkbox = QCheckBox("Auto")
 
         trig_bgrp.addButton(trig_none_radio)
         trig_bgrp.addButton(trig_rising_radio)
@@ -231,7 +192,6 @@ class Oscilloscope(QApplication):
             self.probe_10x_checkbox = None
             self.fsr_status_label = None
 
-        right_box.addWidget(trig_gbox)
 
         trig_rising_radio.mode = TrigMode.RISING_EDGE
         trig_falling_radio.mode = TrigMode.FALLING_EDGE
@@ -239,23 +199,20 @@ class Oscilloscope(QApplication):
 
         trig_bgrp.buttonClicked.connect(self.trig_button_callback)
 
-        pause_button = QPushButton()
-        trig_oneshot_button = QPushButton()
-        reset_zoom_button = QPushButton()
+        pause_button = QPushButton("Pause")
+        trig_oneshot_button = QPushButton("One-shot")
+        reset_zoom_button = QPushButton("Reset Zoom")
 
         pause_button.setCheckable(True)
         trig_oneshot_button.setCheckable(True)
-        pause_button.setFlat(True)
-        trig_oneshot_button.setFlat(True)
-        reset_zoom_button.setFlat(True)
 
         pause_button.clicked.connect(self.toggle_paused)
         reset_zoom_button.clicked.connect(self.reset_graph_range)
 
         pan_zoom_box = QHBoxLayout()
         pan_zoom_bgrp = QButtonGroup(pan_zoom_box)
-        pan_radio = QRadioButton()
-        zoom_radio = QRadioButton()
+        pan_radio = QRadioButton("Pan")
+        zoom_radio = QRadioButton("Zoom")
         pan_zoom_bgrp.addButton(pan_radio)
         pan_zoom_bgrp.addButton(zoom_radio)
         pan_zoom_box.addWidget(pan_radio)
@@ -265,6 +222,7 @@ class Oscilloscope(QApplication):
         pan_radio.mode = "pan"
         zoom_radio.mode = "zoom"
 
+        left_box.addWidget(trig_gbox)
         left_box.addWidget(pause_button)
         left_box.addWidget(trig_oneshot_button)
         left_box.addWidget(reset_zoom_button)
@@ -282,16 +240,6 @@ class Oscilloscope(QApplication):
 
         self.show_trig_line_checkbox = show_trig_line_checkbox
         self.show_trig_line_checkbox.toggled.connect(self.update_trig_line_visibility)
-
-        set_icon_css(trig_rising_radio, "resources/trig_rising.png", 64)
-        set_icon_css(trig_falling_radio, "resources/trig_falling.png", 64)
-        set_icon_css(trig_none_radio, "resources/trig_none.png", 64)
-        set_icon_css(trig_auto_checkbox, "resources/trig_auto.png", 64)
-        set_icon_css(pause_button, "resources/pause.png", 64)
-        set_icon_css(trig_oneshot_button, "resources/trig_oneshot.png", 64)
-        set_icon_css(reset_zoom_button, "resources/reset_zoom.png", 64)
-        set_icon_css(pan_radio, "resources/pan.png", 64)
-        set_icon_css(zoom_radio, "resources/zoom.png", 64)
 
         trig_line_color = "#FA234A"
         self.trig_line = pg.InfiniteLine(
