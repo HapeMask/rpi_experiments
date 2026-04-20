@@ -33,15 +33,15 @@ def ad8337_vgain_to_mult(v_gain: Union[float, np.ndarray]) -> Union[float, np.nd
     mult = 10 ** (gain_db / 20)
 
     if isinstance(v_gain, float):
-        mult = float(mult.squeeze())
+        return float(mult.squeeze())
 
     return mult
 
 
 @overload
-def ad8337_mult_to_vgain(v_gain: float) -> float: ...
+def ad8337_mult_to_vgain(mult: float) -> float: ...
 @overload
-def ad8337_mult_to_vgain(v_gain: np.ndarray) -> np.ndarray: ...
+def ad8337_mult_to_vgain(mult: np.ndarray) -> np.ndarray: ...
 
 def ad8337_mult_to_vgain(mult: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
     gain_db = np.log10(mult) * 20
@@ -52,7 +52,7 @@ def ad8337_mult_to_vgain(mult: Union[float, np.ndarray]) -> Union[float, np.ndar
     )
 
     if isinstance(mult, float):
-        v_gain = float(v_gain.squeeze())
+        return float(v_gain.squeeze())
 
     return v_gain
 

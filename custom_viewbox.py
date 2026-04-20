@@ -11,7 +11,7 @@ import pyqtgraph as pg
 def get_si_prefixes(val: float) -> Tuple[str, str, float]:
     pref = ""
     inv_pref = ""
-    scale = 1
+    scale = 1.0
 
     if val == 0:
         return pref, inv_pref, scale

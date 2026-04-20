@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import List, Sequence
 
 print("Imports...")
 import sys
@@ -64,7 +64,7 @@ class Oscilloscope(QApplication):
         self.sample_rates = sample_rates
         self.graph_antialias_factor = graph_antialias_factor
         self.la_mode = False
-        self.osc_lines = []
+        self.osc_lines : List[pg.PlotDataItem] = []
         self._last_gen = None
 
         self.update_interval_sec = 1 / update_fps
