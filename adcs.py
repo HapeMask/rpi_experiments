@@ -7,11 +7,16 @@ from adc_interfaces import ParallelADC, SerialADC
 from mcp4728 import MCP4728
 
 
+@overload
+def map_v(v: float, frm: Tuple[float, float], to: Tuple[float, float]) -> float: ...
+@overload
+def map_v(v: np.ndarray, frm: Tuple[float, float], to: Tuple[float, float]) -> np.ndarray: ...
+
 def map_v(
     v: Union[float, np.ndarray],
     frm: Tuple[float, float],
     to: Tuple[float, float]
-) -> float:
+) -> Union[float, np.ndarray]:
     v = (v - frm[0]) / (frm[1] - frm[0])
     return v * (to[1] - to[0]) + to[0]
 
@@ -89,6 +94,12 @@ class ADC3908(ParallelADC):
         self.update_dac()
         for channel in range(self.n_channels):
             self.set_attenuation(channel, False)
+
+    def probe_10x(self, channel: int) -> bool:
+        return self._10x_mode[channel]
+
+    def set_probe_10x(self, channel: int, value: bool) -> None:
+        self._10x_mode[channel] = value
 
     def update_dac(self):
         self.dac.set_voltages(
@@ -184,7 +195,7 @@ class ADC3908(ParallelADC):
 
         raise ValueError(
             f"±{fsr_peak}V FSR is not achievable "
-            f"({'10x' if self._10x_mode else '1x'} probe mode)"
+            f"({'10x' if self._10x_mode[channel] else '1x'} probe mode)"
         )
 
 
@@ -207,6 +218,11 @@ class ADC1175(ParallelADC):
         self.input_range = input_range
         self._10x_mode = [True for _ in range(self.n_channels)]
 
+    def probe_10x(self, channel: int) -> bool:
+        return self._10x_mode[channel]
+
+    def set_probe_10x(self, channel: int, value: bool) -> None:
+        self._10x_mode[channel] = value
 
     def update_dac(self, *args, **kwargs):
         pass

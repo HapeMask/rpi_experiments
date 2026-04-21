@@ -28,7 +28,7 @@ import pyqtgraph as pg
 from adc_interfaces import TrigMode
 from adcs import ADC3908, ADC1175, SerialADC
 from peripheral_interfaces import get_spi_flag_bits
-from custom_viewbox import CustomViewBox, MinSizeMainWindow
+from custom_viewbox import CustomViewBox, MinSizeMainWindow, ViewMode
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
@@ -69,27 +69,14 @@ class Oscilloscope(QApplication):
         self.la_mode = False
         self.osc_lines : List[pg.PlotDataItem] = []
         self._last_gen = None
-
+        self.paused = False
+        self.trig_mode = TrigMode.RISING_EDGE
         self.update_interval_sec = 1 / update_fps
 
-        # Taken from PyQtGraph mkQApp.
-        # Determines if dark mode is active on startup. Also connects event
-        # handlers to keep dark mode status in sync with the OS.
-        try:
-            # This only works in Qt 6.5+
-            darkMode = self.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
-            self.styleHints().colorSchemeChanged.connect(self._onColorSchemeChange)
-        except AttributeError:
-            palette = self.palette()
-            windowTextLightness = palette.color(QtGui.QPalette.ColorRole.WindowText).lightness()
-            windowLightness = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
-            darkMode = windowTextLightness > windowLightness
-            self.paletteChanged.connect(self._onPaletteChange)
-        self.setProperty("darkMode", darkMode)
+        self._configure_dark_mode()
 
         self.window = MinSizeMainWindow(minimum_size=(700, 400))
         self.window.setWindowTitle("Oscilloscope")
-        layout = QHBoxLayout()
 
         self.view_box = CustomViewBox()
         self.graph = pg.PlotWidget(viewBox=self.view_box)
@@ -99,33 +86,78 @@ class Oscilloscope(QApplication):
         self.timer.timeout.connect(self.plot_callback)
         self.timer.start(int(self.update_interval_sec * 1000))
 
-        right_box = QVBoxLayout()
-        left_box = QVBoxLayout()
+        trig_gbox = self._build_trigger_box()
+        right_box = self._build_right_pane()
+        left_box = self._build_left_pane(trig_gbox)
 
+        layout = QHBoxLayout()
+        layout.addLayout(left_box)
+        layout.addWidget(self.graph)
+        layout.addLayout(right_box)
+
+        self._build_trig_line()
+        self.update_trig_line_visibility()
+
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+        self.window.setCentralWidget(central_widget)
+
+        self._apply_init_defaults(init_sample_rate)
+        self.reset_graph_range()
+
+        self.window.move(100, 100)
+        self.window.show()
+
+    def _configure_dark_mode(self):
+        # Taken from PyQtGraph mkQApp.
+        # Determines if dark mode is active on startup. Also connects event
+        # handlers to keep dark mode status in sync with the OS.
+        try:
+            # This only works in Qt 6.5+
+            darkMode = self.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+            self.styleHints().colorSchemeChanged.connect(self._onColorSchemeChange)
+        except AttributeError:
+            darkMode = self._palette_is_dark(self.palette())
+            self.paletteChanged.connect(self._onPaletteChange)
+        self._set_dark_mode(darkMode)
+
+    def _build_trigger_box(self):
         trig_gbox = QGroupBox("Trigger Options")
         trig_gbox_layout = QGridLayout()
         trig_gbox.setLayout(trig_gbox_layout)
 
-        trig_bgrp = QButtonGroup(right_box)
+        self.trig_bgrp = QButtonGroup(trig_gbox)
         trig_rising_radio = QRadioButton("Rising")
         trig_falling_radio = QRadioButton("Falling")
         trig_none_radio = QRadioButton("None")
-        trig_auto_checkbox = QCheckBox("Auto")
+        self.trig_auto_checkbox = QCheckBox("Auto")
 
-        trig_bgrp.addButton(trig_none_radio)
-        trig_bgrp.addButton(trig_rising_radio)
-        trig_bgrp.addButton(trig_falling_radio)
+        self.trig_bgrp.addButton(trig_none_radio)
+        self.trig_bgrp.addButton(trig_rising_radio)
+        self.trig_bgrp.addButton(trig_falling_radio)
         trig_rising_radio.setChecked(True)
 
-        show_trig_line_checkbox = QPushButton("Show Thresh.")
-        show_trig_line_checkbox.setCheckable(True)
-        show_trig_line_checkbox.setChecked(True)
+        trig_rising_radio.mode = TrigMode.RISING_EDGE
+        trig_falling_radio.mode = TrigMode.FALLING_EDGE
+        trig_none_radio.mode = TrigMode.NONE
+        self.trig_bgrp.buttonClicked.connect(self.trig_button_callback)
+
+        self.show_trig_line_checkbox = QPushButton("Show Thresh.")
+        self.show_trig_line_checkbox.setCheckable(True)
+        self.show_trig_line_checkbox.setChecked(True)
+        self.show_trig_line_checkbox.toggled.connect(self.update_trig_line_visibility)
+        self.trig_auto_checkbox.stateChanged.connect(self.update_trig_line_visibility)
 
         trig_gbox_layout.addWidget(trig_rising_radio, 0, 0)
         trig_gbox_layout.addWidget(trig_falling_radio, 0, 1)
         trig_gbox_layout.addWidget(trig_none_radio, 1, 0)
-        trig_gbox_layout.addWidget(trig_auto_checkbox, 1, 1)
-        trig_gbox_layout.addWidget(show_trig_line_checkbox, 2, 0, 1, 2)
+        trig_gbox_layout.addWidget(self.trig_auto_checkbox, 1, 1)
+        trig_gbox_layout.addWidget(self.show_trig_line_checkbox, 2, 0, 1, 2)
+
+        return trig_gbox
+
+    def _build_right_pane(self):
+        right_box = QVBoxLayout()
 
         self.sample_rate_input = QComboBox()
         for rate in self.sample_rates:
@@ -145,31 +177,29 @@ class Oscilloscope(QApplication):
 
         channel_hbox = QHBoxLayout()
         self.channel_toggles = []
-        for ch_idx in range(n_channels):
+        for ch_idx in range(self.n_channels):
+            color = CHANNEL_COLORS[ch_idx % len(CHANNEL_COLORS)]
             ch_toggle = QPushButton(f"Ch. {ch_idx}")
             ch_toggle.setCheckable(True)
             ch_toggle.setChecked(False)
             ch_toggle.clicked.connect(lambda _UNUSED, ch=ch_idx: self.toggle_channel(ch))
-            ch_toggle.setStyleSheet("QPushButton:checked {background-color: #00aeff;}")
+            ch_toggle.setStyleSheet(f"QPushButton:checked {{background-color: {color};}}")
             channel_hbox.addWidget(ch_toggle)
             self.channel_toggles.append(ch_toggle)
 
-        la_mode_button = QPushButton("LA Mode")
-        la_mode_button.setCheckable(True)
-        la_mode_button.setChecked(False)
-        la_mode_button.clicked.connect(self.toggle_la_mode)
-        la_mode_button.setStyleSheet("QPushButton:checked {background-color: #ff6633;}")
-        self.la_mode_button = la_mode_button
+        self.la_mode_button = QPushButton("LA Mode")
+        self.la_mode_button.setCheckable(True)
+        self.la_mode_button.setChecked(False)
+        self.la_mode_button.clicked.connect(self.toggle_la_mode)
+        self.la_mode_button.setStyleSheet("QPushButton:checked {background-color: #ff6633;}")
 
-        right_box.addWidget(QLabel("Sample Rate"))
-        right_box.addWidget(self.sample_rate_input)
+        self._add_labeled(right_box, "Sample Rate", self.sample_rate_input)
         right_box.addLayout(channel_hbox)
-        right_box.addWidget(la_mode_button)
-        right_box.addWidget(QLabel("Sample Buffer"))
-        right_box.addWidget(self.sample_buffer_input)
+        right_box.addWidget(self.la_mode_button)
+        self._add_labeled(right_box, "Sample Buffer", self.sample_buffer_input)
         right_box.addStretch(1)
 
-        if hasattr(adc, "set_input_fullscale_range"):
+        if hasattr(self.adc, "set_input_fullscale_range"):
             self.channel_config_button = QPushButton("Channel Config...")
             self.channel_config_button.clicked.connect(self._open_channel_config)
             right_box.addWidget(self.channel_config_button)
@@ -180,21 +210,19 @@ class Oscilloscope(QApplication):
             self.channel_fsr_combos: List[QComboBox] = []
             self.channel_fsr_status_labels: List[QLabel] = []
 
+        return right_box
 
-        trig_rising_radio.mode = TrigMode.RISING_EDGE
-        trig_falling_radio.mode = TrigMode.FALLING_EDGE
-        trig_none_radio.mode = TrigMode.NONE
+    def _build_left_pane(self, trig_gbox):
+        left_box = QVBoxLayout()
 
-        trig_bgrp.buttonClicked.connect(self.trig_button_callback)
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setCheckable(True)
+        self.pause_button.clicked.connect(self.toggle_paused)
 
-        pause_button = QPushButton("Pause")
-        trig_oneshot_button = QPushButton("One-shot")
+        self.trig_oneshot_button = QPushButton("One-shot")
+        self.trig_oneshot_button.setCheckable(True)
+
         reset_zoom_button = QPushButton("Reset Zoom")
-
-        pause_button.setCheckable(True)
-        trig_oneshot_button.setCheckable(True)
-
-        pause_button.clicked.connect(self.toggle_paused)
         reset_zoom_button.clicked.connect(self.reset_graph_range)
 
         pan_zoom_box = QHBoxLayout()
@@ -207,28 +235,18 @@ class Oscilloscope(QApplication):
         pan_zoom_box.addWidget(zoom_radio)
         pan_zoom_bgrp.buttonClicked.connect(self.pan_zoom_callback)
         pan_radio.setChecked(True)
-        pan_radio.mode = "pan"
-        zoom_radio.mode = "zoom"
+        pan_radio.mode = ViewMode.PAN
+        zoom_radio.mode = ViewMode.ZOOM
 
         left_box.addWidget(trig_gbox)
-        left_box.addWidget(pause_button)
-        left_box.addWidget(trig_oneshot_button)
+        left_box.addWidget(self.pause_button)
+        left_box.addWidget(self.trig_oneshot_button)
         left_box.addWidget(reset_zoom_button)
         left_box.addLayout(pan_zoom_box)
 
-        layout.addLayout(left_box)
-        layout.addWidget(self.graph)
-        layout.addLayout(right_box)
+        return left_box
 
-        self.pause_button = pause_button
-        self.trig_oneshot_button = trig_oneshot_button
-        self.trig_bgrp = trig_bgrp
-        self.trig_auto_checkbox = trig_auto_checkbox
-        self.trig_auto_checkbox.stateChanged.connect(self.update_trig_line_visibility)
-
-        self.show_trig_line_checkbox = show_trig_line_checkbox
-        self.show_trig_line_checkbox.toggled.connect(self.update_trig_line_visibility)
-
+    def _build_trig_line(self):
         trig_line_color = "#FA234A"
         self.trig_line = pg.InfiniteLine(
             pos=2,
@@ -245,19 +263,11 @@ class Oscilloscope(QApplication):
         self.trig_line_label.setAcceptHoverEvents(False)
         self.trig_line_label.textItem.setAcceptHoverEvents(False)
 
-        self.trig_mode = TrigMode.RISING_EDGE
-        self.update_trig_line_visibility()
-        self.paused = False
-
-        central_widget = QWidget()
-        central_widget.setLayout(layout)
-        self.window.setCentralWidget(central_widget)
-
-        # Set UI elements and hardware to default configurations.
+    def _apply_init_defaults(self, init_sample_rate):
         self.set_sample_rate(init_sample_rate)
         self.channel_toggles[0].setChecked(True)
         self.toggle_channel(0)
-        self.resize_sample_buffer(adc.n_samples)
+        self.resize_sample_buffer(self.adc.n_samples)
         if self.channel_config_button is not None:
             default_fsr_idx = FSR_RANGES_10X.index(3.3)
             for ch in range(self.n_channels):
@@ -267,28 +277,20 @@ class Oscilloscope(QApplication):
                 combo.blockSignals(False)
                 self._apply_channel_fsr(ch, reset_range=False)
 
-        self.reset_graph_range()
+    def _set_dark_mode(self, dark_mode: bool):
+        self.setProperty("darkMode", dark_mode)
 
-        self.window.move(100, 100)
-        self.window.show()
+    @staticmethod
+    def _palette_is_dark(palette) -> bool:
+        window_text = palette.color(QtGui.QPalette.ColorRole.WindowText).lightness()
+        window = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
+        return window_text > window
 
     def _onColorSchemeChange(self, colorScheme):
-        # Attempt to keep darkMode attribute up to date
-        # QEvent.Type.PaletteChanged/ApplicationPaletteChanged will be emitted before
-        # QStyleHint().colorSchemeChanged.emit()!
-        # Uses Qt 6.5+ API
-        darkMode = colorScheme == QtCore.Qt.ColorScheme.Dark
-        self.setProperty("darkMode", darkMode)
+        self._set_dark_mode(colorScheme == QtCore.Qt.ColorScheme.Dark)
 
     def _onPaletteChange(self, palette):
-        # Attempt to keep darkMode attribute up to date
-        # QEvent.Type.PaletteChanged/ApplicationPaletteChanged will be emitted after
-        # paletteChanged.emit()!
-        # Using API deprecated in Qt 6.0
-        windowTextLightness = palette.color(QtGui.QPalette.ColorRole.WindowText).lightness()
-        windowLightness = palette.color(QtGui.QPalette.ColorRole.Window).lightness()
-        darkMode = windowTextLightness > windowLightness
-        self.setProperty("darkMode", darkMode)
+        self._set_dark_mode(self._palette_is_dark(palette))
 
     def _build_channel_config_dialog(self):
         self.channel_config_dialog = QDialog(self.window)
@@ -312,7 +314,7 @@ class Oscilloscope(QApplication):
             grid.addWidget(self._make_row_cell(QLabel(f"Ch. {ch}"), bg), ch + 1, 0)
 
             checkbox = QCheckBox()
-            checkbox.setChecked(self.adc._10x_mode[ch])
+            checkbox.setChecked(self.adc.probe_10x(ch))
             checkbox.toggled.connect(
                 lambda checked, c=ch: self._on_channel_probe_toggled(c, checked)
             )
@@ -350,6 +352,11 @@ class Oscilloscope(QApplication):
         dialog_layout.addWidget(button_box)
         self.channel_config_dialog.setLayout(dialog_layout)
 
+    @staticmethod
+    def _add_labeled(box, text, widget):
+        box.addWidget(QLabel(text))
+        box.addWidget(widget)
+
     def _make_row_cell(self, widget, bg_color=None, align=None):
         container = QFrame()
         if bg_color is not None:
@@ -374,13 +381,13 @@ class Oscilloscope(QApplication):
         combo.blockSignals(True)
         combo.clear()
         for fsr in FSR_RANGES_10X:
-            display_fsr = fsr if self.adc._10x_mode[ch] else fsr / 10
+            display_fsr = fsr if self.adc.probe_10x(ch) else fsr / 10
             combo.addItem(f"±{display_fsr:g}V", display_fsr)
         combo.setCurrentIndex(prev_idx)
         combo.blockSignals(False)
 
     def _on_channel_probe_toggled(self, ch, checked):
-        self.adc._10x_mode[ch] = checked
+        self.adc.set_probe_10x(ch, checked)
         self._populate_channel_fsr_combo(ch)
         self._apply_channel_fsr(ch)
 
@@ -616,7 +623,6 @@ def main():
         else:
             # For new scope
             adc = ADC3908(n_samples=4096)
-            adc.update_dac()
 
     print("Setting up app...")
     pg.setConfigOptions(antialias=True)

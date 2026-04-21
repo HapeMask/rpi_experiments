@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Tuple
 from math import log10
 
@@ -6,6 +7,11 @@ from PyQt6.QtWidgets import QMainWindow, QGraphicsItem, QGraphicsSimpleTextItem
 from PyQt6.QtGui import QColor, QBrush
 
 import pyqtgraph as pg
+
+
+class ViewMode(Enum):
+    PAN = "pan"
+    ZOOM = "zoom"
 
 
 def get_si_prefixes(val: float) -> Tuple[str, str, float]:
@@ -58,17 +64,17 @@ def format_dVdt(dV: float, dt: float) -> str:
 class CustomViewBox(pg.ViewBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.mode = "pan"
+        self.mode = ViewMode.PAN
 
         self.scaleBoxLabel = pg.TextItem("", color="#ffffff")
         self.scaleBoxLabel.setParentItem(self.rbScaleBox)
 
-    def set_mode(self, mode):
+    def set_mode(self, mode: ViewMode):
         self.mode = mode
 
-        if self.mode == "pan":
+        if self.mode == ViewMode.PAN:
             self.state["mouseMode"] = pg.ViewBox.PanMode
-        elif self.mode == "zoom":
+        elif self.mode == ViewMode.ZOOM:
             self.state["mouseMode"] = pg.ViewBox.RectMode
 
     def mouseDragEvent(self, event, axis=None):
@@ -86,13 +92,13 @@ class CustomViewBox(pg.ViewBox):
         tr = pg.functions.invertQTransform(tr)
 
         # Scale or translate based on mouse button
-        if self.mode == "pan":
+        if self.mode == ViewMode.PAN:
             diff_tr = tr.map(diff) - tr.map(pg.Point(0, 0))
 
             self._resetTarget()
             self.translateBy(x=diff_tr.x(), y=diff_tr.y())
             self.sigRangeChangedManually.emit([True, True])
-        elif self.mode == "zoom":
+        elif self.mode == ViewMode.ZOOM:
             start_pos = event.buttonDownPos(event.button())
             ax = QtCore.QRectF(pg.Point(start_pos), pg.Point(pos))
             axhp = ax.height()
@@ -120,19 +126,4 @@ class CustomViewBox(pg.ViewBox):
 class MinSizeMainWindow(QMainWindow):
     def __init__(self, *args, minimum_size, **kwargs):
         super().__init__(*args, **kwargs)
-
-        self.minimum_size = minimum_size
         self.setMinimumSize(*minimum_size)
-
-    def resizeEvent(self, event):
-        if (
-            event.size().width() < self.minimum_size[0] or
-            event.size().height() < self.minimum_size[1]
-        ):
-            new_size = QtCore.QSize(
-                max(event.size().width(), self.minimum_size[0]),
-                max(event.size().height(), self.minimum_size[1]),
-            )
-            self.resize(new_size)
-        else:
-            return super().resizeEvent(event)
