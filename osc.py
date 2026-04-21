@@ -32,7 +32,7 @@ from custom_viewbox import CustomViewBox, MinSizeMainWindow, ViewMode
 
 
 AVAILABLE_SAMPLE_RATES = [int(v * 1e6) for v in [1e-2, 1e-1, 1, 2.5, 5, 10, 20, 31.25, 40, 50, 62.5]]
-FSR_RANGES_10X = [0.33, 1.0, 3.3, 10.0]
+FSR_RANGES_10X = [0.33, 1.0, 3.3, 10.0, 50, 100.0, 180.0]
 AVAILABLE_BUFFER_SIZES = [512, 1024, 2048, 4096, 8192, 16384, 32767, 65535, 131072, 262144]
 
 # Colors for oscilloscope channels (Ch0, Ch1, ...)
@@ -45,7 +45,6 @@ LA_MAX_SAMPLES = 65535
 
 def sample_rate_to_msps_str(sample_rate):
     return f"{sample_rate / 1e6:2.2f} MS/s"
-
 
 
 class Oscilloscope(QApplication):
@@ -397,12 +396,9 @@ class Oscilloscope(QApplication):
         if fsr_peak is None:
             return
         self.channel_fsr_status_labels[ch].setText("")
-        try:
-            self.adc.set_input_fullscale_range(ch, fsr_peak)
-            if reset_range:
-                self.reset_graph_range()
-        except ValueError:
-            self.channel_fsr_status_labels[ch].setText("Not achievable")
+        self.adc.set_input_fullscale_range(ch, fsr_peak)
+        if reset_range:
+            self.reset_graph_range()
 
     def _recreate_plot_lines(self):
         self.graph.clear()
