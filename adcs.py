@@ -4,6 +4,7 @@ from typing import overload, Tuple, Union
 import numpy as np
 
 from adc_interfaces import ParallelADC, SerialADC
+from peripheral_interfaces import get_spi_flag_bits
 from mcp4728 import MCP4728
 
 
@@ -220,7 +221,7 @@ class ADC1175(ParallelADC):
     def __init__(
         self,
         n_samples: int=16384,
-        n_channels: int=2,
+        n_channels: int=1,
         input_range: Tuple[float, float] = (-0.66, 0.66),
     ):
         super().__init__(
@@ -281,3 +282,57 @@ class ADC1175(ParallelADC):
 
     def input_fullscale_range(self, channel):
         return self.adc_fs_to_real(np.asarray(ADC1175_FULLSCALE_RANGE)[None], channel).ravel()
+
+ADS7884_FULLSCALE_RANGE: Tuple[float, float] = (0.0, 3.3)
+ADS7884_FULLSCALE_VPP = (ADC1175_FULLSCALE_RANGE[1] - ADC1175_FULLSCALE_RANGE[0])
+
+class ADS7884(SerialADC):
+    def __init__(
+        self,
+        n_samples: int=16384,
+        n_channels: int=1,
+        input_range: Tuple[float, float] = (0.0, 3.3),
+    ):
+        super().__init__(
+            get_spi_flag_bits(clk_pha=1),
+            VREF=ADS7884_FULLSCALE_RANGE,
+            n_samples=n_samples,
+        )
+
+        self.input_range = input_range
+        self._10x_mode = [False for _ in range(self.n_channels)]
+
+    def probe_10x(self, channel: int) -> bool:
+        return self._10x_mode[channel]
+
+    def set_probe_10x(self, channel: int, value: bool) -> None:
+        self._10x_mode[channel] = value
+
+    def update_dac(self, *args, **kwargs):
+        pass
+
+    @overload
+    def adc_fs_to_real(self, samples: float, channel: int, inverse: bool) -> float: ...
+    @overload
+    def adc_fs_to_real(self, samples: np.ndarray, channel: int, inverse: bool) -> np.ndarray: ...
+
+    def adc_fs_to_real(
+        self, samples: Union[float, np.ndarray], channel: int, inverse: bool = False
+    ) -> Union[float, np.ndarray]:
+        """Map voltage samples within the ADC's fullscale range to real voltage
+        levels at the oscilloscope input, or optionally perform the inverse."""
+        return samples
+
+    @overload
+    def real_to_adc_fs(self, samples: float, channel: int) -> float: ...
+    @overload
+    def real_to_adc_fs(self, samples: np.ndarray, channel: int) -> np.ndarray: ...
+    def real_to_adc_fs(
+        self, samples: Union[float, np.ndarray], channel: int
+    ) -> Union[float, np.ndarray]:
+        """Map voltage samples at the oscilloscope input to levels within the
+        ADC's fullscale input range."""
+        return self.adc_fs_to_real(samples, channel, inverse=True)
+
+    def input_fullscale_range(self, channel):
+        return self.adc_fs_to_real(np.asarray(ADS7884_FULLSCALE_RANGE)[None], channel).ravel()

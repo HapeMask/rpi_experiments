@@ -31,8 +31,8 @@ public:
     virtual uint32_t start_sampling(uint32_t sample_rate_hz) = 0;
     virtual void stop_sampling() = 0;
     virtual void resize(int n_samples) = 0;
-    virtual void toggle_channel(int channel_idx) = 0;
     virtual int n_active_channels() const = 0;
+    virtual void toggle_channel(int channel_idx);
     bool channel_active(int ch) const;
 
     virtual std::tuple<py::array_t<float>, bool, std::optional<int>> get_buffers(

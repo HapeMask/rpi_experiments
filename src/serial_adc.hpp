@@ -22,7 +22,6 @@ class SerialADC : public ADC {
         virtual ~SerialADC();
 
         uint32_t start_sampling(uint32_t sample_rate_hz) override;
-        void toggle_channel(int channel_idx) override {}
         void stop_sampling() override;
         void resize(int n_samples) override;
 

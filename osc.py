@@ -26,8 +26,7 @@ from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
 
 from adc_interfaces import TrigMode
-from adcs import ADC3908, ADC1175, SerialADC
-from peripheral_interfaces import get_spi_flag_bits
+from adcs import ADC3908, ADC1175, ADS7884
 from custom_viewbox import CustomViewBox, MinSizeMainWindow, ViewMode
 
 
@@ -53,7 +52,6 @@ class Oscilloscope(QApplication):
         argv,
         adc,
         update_fps: int = 30,
-        n_channels: int = 2,
         init_sample_rate: int = int(5e6),
         sample_rates: Sequence[int] = AVAILABLE_SAMPLE_RATES,
         graph_antialias_factor: int = 8,
@@ -62,7 +60,7 @@ class Oscilloscope(QApplication):
 
         self.adc = adc
         self.update_fps = update_fps
-        self.n_channels = n_channels
+        self.n_channels = adc.n_channels
         self.sample_rates = sample_rates
         self.graph_antialias_factor = graph_antialias_factor
         self.la_mode = False
@@ -444,6 +442,9 @@ class Oscilloscope(QApplication):
             self.graph.setYRange(-0.25, n_ch)
         else:
             # Pick the biggest FSR across active channels based on gain/bias.
+            #if self.adc.n_active_channels() < 1:
+            #    return
+
             fsrs = [
                 self.adc.input_fullscale_range(ch)
                 for ch in range(self.n_channels)
@@ -522,10 +523,9 @@ class Oscilloscope(QApplication):
             # TODO: Hack. Things get less reliable for early samples at high sample
             # rates with this ADC.
             skip_samples = int(10e-6 * self.adc_sample_rate)
-        elif isinstance(self.adc, ADC3908) and self.adc_sample_rate > 40e6:
-            # TODO: And apparently this ADC too, albeit just a few samples and
-            # only at max rates.
-            skip_samples = 32
+        elif isinstance(self.adc, ADC3908):
+            # TODO: And apparently this ADC too, albeit a little better?
+            skip_samples = int(1e-6 * self.adc_sample_rate)
 
         low_thresh = 0.5
         high_thresh = 2.5
@@ -603,22 +603,17 @@ class Oscilloscope(QApplication):
 
 
 def main():
-    if "-s" in sys.argv:
-        sys.argv.remove("-s")
+    init_sample_rate = int(5e6)
+    sample_rates = AVAILABLE_SAMPLE_RATES
+
+    if "-adc1175" in sys.argv:
+        adc = ADC1175()
+    elif "-ads7884" in sys.argv:
         init_sample_rate = int(1e6)
         sample_rates = [int(v * 1e6) for v in [0.5, 1, 1.5, 2]]
-
-        adc = SerialADC(get_spi_flag_bits(clk_pha=1), VREF=(0, 3.3), n_samples=2048)
+        adc = ADS7884()
     else:
-        init_sample_rate = int(5e6)
-        sample_rates = AVAILABLE_SAMPLE_RATES
-
-        # For old scope
-        if "-adc1175" in sys.argv:
-            adc = ADC1175()
-        else:
-            # For new scope
-            adc = ADC3908(n_samples=4096)
+        adc = ADC3908()
 
     print("Setting up app...")
     pg.setConfigOptions(antialias=True)

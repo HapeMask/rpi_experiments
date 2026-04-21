@@ -360,3 +360,7 @@ std::tuple<py::array_t<float>, bool, std::optional<int>> ADC::get_buffers(
 bool ADC::channel_active(int ch) const {
     return _active_channels[ch];
 }
+
+void ADC::toggle_channel(int channel_idx) {
+    _active_channels[channel_idx] = !_active_channels[channel_idx];
+}
