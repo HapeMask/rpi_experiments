@@ -272,7 +272,7 @@ class Oscilloscope(QApplication):
                 combo.blockSignals(True)
                 combo.setCurrentIndex(default_fsr_idx)
                 combo.blockSignals(False)
-                self._apply_channel_fsr(ch, reset_range=False)
+                self._apply_channel_fsr(ch)
 
     def _set_dark_mode(self, dark_mode: bool):
         self.setProperty("darkMode", dark_mode)
@@ -388,15 +388,13 @@ class Oscilloscope(QApplication):
         self._populate_channel_fsr_combo(ch)
         self._apply_channel_fsr(ch)
 
-    def _apply_channel_fsr(self, ch, reset_range=True):
+    def _apply_channel_fsr(self, ch):
         combo = self.channel_fsr_combos[ch]
         fsr_peak = combo.currentData()
         if fsr_peak is None:
             return
         self.channel_fsr_status_labels[ch].setText("")
         self.adc.set_input_fullscale_range(ch, fsr_peak)
-        if reset_range:
-            self.reset_graph_range()
 
     def _recreate_plot_lines(self):
         self.graph.clear()
