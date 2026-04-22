@@ -115,6 +115,10 @@ class ADC3908(ParallelADC):
             map_v(self.channel_gain_voltages[1], GAIN_OUTPUT_RANGE, (0, self.dac_Vdd)),
         )
 
+    def set_channel_bias(self, channel: int, bias: float) -> None:
+        self.channel_bias_voltages[channel] = bias
+        self.update_dac()
+
     @overload
     def adc_fs_to_real(self, samples: float, channel: int, inverse: bool) -> float: ...
     @overload
@@ -196,10 +200,10 @@ class ADC3908(ParallelADC):
             required_vga = required_total_gain / (probe_gain * _att_gain * opa_gain * fda_gain)
             v_gain = ad8337_mult_to_vgain(required_vga)
 
-            if v_gain < -0.7 or v_gain > 0.7:
+            if v_gain < -0.6 or v_gain > 0.6:
                 continue
 
-            if abs(required_vga - ad8337_vgain_to_mult(v_gain)) > 1e-2:
+            if abs(required_vga - ad8337_vgain_to_mult(v_gain)) > 3e-1:
                 continue
 
             self._45x_att[channel] = use_att
@@ -241,6 +245,9 @@ class ADC1175(ParallelADC):
         self._10x_mode[channel] = value
 
     def update_dac(self, *args, **kwargs):
+        pass
+
+    def set_channel_bias(self, channel: int, bias: float) -> None:
         pass
 
     @overload
@@ -309,6 +316,9 @@ class ADS7884(SerialADC):
         self._10x_mode[channel] = value
 
     def update_dac(self, *args, **kwargs):
+        pass
+
+    def set_channel_bias(self, channel: int, bias: float) -> None:
         pass
 
     @overload

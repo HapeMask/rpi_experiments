@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -194,6 +195,37 @@ class Oscilloscope(QApplication):
         right_box.addLayout(channel_hbox)
         right_box.addWidget(self.la_mode_button)
         self._add_labeled(right_box, "Sample Buffer", self.sample_buffer_input)
+
+        bias_gbox = QGroupBox("Channel Bias")
+        bias_outer = QHBoxLayout()
+        bias_gbox.setLayout(bias_outer)
+        self.bias_sliders: List[QSlider] = []
+        self.bias_value_labels: List[QLabel] = []
+        center = QtCore.Qt.AlignmentFlag.AlignHCenter
+        for ch_idx in range(self.n_channels):
+            color = CHANNEL_COLORS[ch_idx % len(CHANNEL_COLORS)]
+            name_label = QLabel(f"Ch. {ch_idx + 1}")
+            name_label.setStyleSheet(f"color: {color};")
+            name_label.setAlignment(center)
+            slider = QSlider(QtCore.Qt.Orientation.Vertical)
+            slider.setRange(-1000, 1000)
+            slider.setValue(0)
+            slider.valueChanged.connect(
+                lambda v, ch=ch_idx: self._on_bias_slider_changed(ch, v)
+            )
+            value_label = QLabel("+0.00V")
+            value_label.setAlignment(center)
+
+            col = QVBoxLayout()
+            col.setSpacing(4)
+            col.addWidget(name_label)
+            col.addWidget(slider)
+            col.addWidget(value_label)
+            bias_outer.addLayout(col)
+            self.bias_sliders.append(slider)
+            self.bias_value_labels.append(value_label)
+        right_box.addWidget(bias_gbox)
+
         right_box.addStretch(1)
 
         if hasattr(self.adc, "set_input_fullscale_range"):
@@ -387,6 +419,12 @@ class Oscilloscope(QApplication):
         self.adc.set_probe_10x(ch, checked)
         self._populate_channel_fsr_combo(ch)
         self._apply_channel_fsr(ch)
+
+    def _on_bias_slider_changed(self, ch, slider_value):
+        # TODO: finish.
+        bias_v = 0.2 * (slider_value / 1000.0)
+        self.adc.set_channel_bias(ch, bias_v)
+        self.bias_value_labels[ch].setText(f"{bias_v:+.2f}V")
 
     def _apply_channel_fsr(self, ch):
         combo = self.channel_fsr_combos[ch]
